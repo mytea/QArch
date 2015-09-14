@@ -1,0 +1,2197 @@
+#!bin/bash
+## Qarch-testpreview
+### Basato su Arch-Mind 2
+####
+clear
+echo "BENVENUTO-----------------------------
+
+QArch, installa Arch Linux rispondendo a delle domande.
+
+IMPORTANTE: Assicurarsi di essere root.
+
+Ti verranno fatte alcune domande per personalizzare il sistema.
+
+Premere un tasto per continuare oppure \"e\" per uscire"
+read -n1 a
+a=`echo $a | tr '[A-Z]' '[a-z]'`
+if [ "$a" = "e" ]; then
+    clear
+    exit 0
+fi
+######00######
+clear
+echo"Scegliere su che ambiente andremo ad operare:
+
+     1.Desktop
+     2.Pentesting
+
+     Scegliendo 1, avrete la possibilità di costruire il vostro ambiente desktop archlinux
+     Scegliendo 2, avrete la posiibilità di installare BlackArch
+
+    Digitare scelta e poi premere invio"
+
+read scelta
+case $scelta in
+  '1') echo""
+  '2')echo"è stato scelto di installare BlackArch, premere invio per continuare"
+        # Run https://blackarch.org/strap.sh as root and follow the instructions:
+        curl -O http://blackarch.org/strap.sh && sha1sum strap.sh
+        # SHA1 sum should match: f8456229463718c097cf70ed06a806f981be7423
+        sudo ./strap.sh
+esac
+##### 1 #######
+clear
+echo "Configurare Tastiera e Localilizzazione sistema--------1
+
+1. it
+2. en
+
+Digitare scelta e invio per continuare oppure \"j\" per saltare questo passaggio."
+read lingua
+
+case $lingua in
+    '1')
+    echo "
+KEYMAP=it
+FONT=Lat2-Terminus16
+FONT_MAP=" tee /etc/vconsole.conf #la tastiera viene impostata come "italiana" e il font è indicato
+ echo "#
+# Catch-all evdev loader for udev-based systems
+# We don't simply match on any device since that also adds accelerometers
+# and other devices that we don't really want to use. The list below
+# matches everything but joysticks.
+
+Section \"InputClass\"
+        Identifier \"evdev pointer catchall\"
+        MatchIsPointer \"on\"
+        MatchDevicePath \"/dev/input/event*\"
+        Driver \"evdev\"
+EndSection
+
+Section \"InputClass\"
+        Identifier \"evdev keyboard catchall\"
+        MatchIsKeyboard \"on\"
+        MatchDevicePath \"/dev/input/event*\"
+        Driver \"evdev\"
+  Option \"XkbLayout\" \"it\"
+EndSection
+
+Section \"InputClass\"
+        Identifier \"evdev touchpad catchall\"
+        MatchIsTouchpad \"on\"
+        MatchDevicePath \"/dev/input/event*\"
+        Driver \"evdev\"
+EndSection
+
+Section \"InputClass\"
+        Identifier \"evdev tablet catchall\"
+        MatchIsTablet \"on\"
+        MatchDevicePath \"/dev/input/event*\"
+        Driver \"evdev\"
+EndSection
+
+Section \"InputClass\"
+        Identifier \"evdev touchscreen catchall\"
+        MatchIsTouchscreen \"on\"
+        MatchDevicePath \"/dev/input/event*\"
+        Driver \"evdev\"
+EndSection" | tee /etc/X11/xorg.conf.d/10-evdev.conf
+
+echo "
+it_IT.UTF-8 UTF-8
+it_IT ISO-8859-1
+it_IT@euro ISO-8859-15" >> /etc/locale.gen
+
+locale-gen
+
+echo "LANG=it_IT.UTF-8" >> /etc/locale.conf
+
+export LANG=it_IT.UTF-8
+;;
+
+    '2')
+
+    echo "
+KEYMAP=en
+FONT=
+FONT_MAP=" tee /etc/vconsole.conf #la tastiera viene impostata come "italiana" e il font è indicato
+
+ echo "#
+# Catch-all evdev loader for udev-based systems
+# We don't simply match on any device since that also adds accelerometers
+# and other devices that we don't really want to use. The list below
+# matches everything but joysticks.
+
+Section \"InputClass\"
+        Identifier \"evdev pointer catchall\"
+        MatchIsPointer \"on\"
+        MatchDevicePath \"/dev/input/event*\"
+        Driver \"evdev\"
+EndSection
+
+Section \"InputClass\"
+        Identifier \"evdev keyboard catchall\"
+        MatchIsKeyboard \"on\"
+        MatchDevicePath \"/dev/input/event*\"
+        Driver \"evdev\"
+  Option \"XkbLayout\" \"en\"
+EndSection
+
+Section \"InputClass\"
+        Identifier \"evdev touchpad catchall\"
+        MatchIsTouchpad \"on\"
+        MatchDevicePath \"/dev/input/event*\"
+        Driver \"evdev\"
+EndSection
+
+Section \"InputClass\"
+        Identifier \"evdev tablet catchall\"
+        MatchIsTablet \"on\"
+        MatchDevicePath \"/dev/input/event*\"
+        Driver \"evdev\"
+EndSection
+
+Section \"InputClass\"
+        Identifier \"evdev touchscreen catchall\"
+        MatchIsTouchscreen \"on\"
+        MatchDevicePath \"/dev/input/event*\"
+        Driver \"evdev\"
+EndSection" | tee /etc/X11/xorg.conf.d/10-evdev.conf
+        echo ""
+    ;;
+
+    'j')
+        echo ""
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+
+read -p "Tastiera configurata. Premere invio per continuare"
+clean
+
+##
+
+clear
+echo "Configurare orologio sistema--------2
+
+Che tipo di impostazione volete dare all'orologio dell'hardware?
+
+ 1) UTC (raccomandato)
+ 2) localtime (deprecato)
+
+Se non si usa Windows,scegliere UTC.Se si usa Windows,è caldamente consigliato usare comunque UTC, ma sarà necessario modificare una voce del registo di Windows.
+digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
+per saltare questo passaggio  "
+read scelta
+
+case $scelta in
+    '1')
+        hwclock --systohc --utc #Imposta utc come impostazione dell'orologio
+        echo ""
+    ;;
+    '2')
+	hwclock --systohc --localtime #Imposta localtime come impostazione dell'orologio
+        echo ""
+    ;;
+    'j')
+        echo ""
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+read -p "Premere invio per continuare"
+
+
+##### 5 #######
+clear
+#AGGIORNAMENTO
+echo "ABILITARE I SERVER--------------3
+
+L'abilitazione dei server è necessaria per aggiornare le fonti software, non c'e alcun pericolo.
+Senza abilitare i server,sarete impossibilitati a installare e/o aggiornare software.
+
+Si aprirà l'editor nano; decommentare (togliendo il #) i repository di Italia, Francia e Germania, salvare con ctrl+o e uscire con ctrl+x.
+
+In alternativa è possibile far deccomentare automaticamente i tre mirror italiani più veloci.
+
+
+1)Deccomentare manualmente i mirror da usare [CONSIGLIATO]
+
+2)Far deccomentare automaticamente i 3 mirror italiani più veloci [sperimentale]
+
+INFORMAZIONI AVANZATE
+Per il punto 2,verrà usato 'reflector' e il comando 'reflector -l 3 -c Italy --save /etc/pacman.d/mirrorlist'
+
+Digitare il numero corrispondente all'alternativa scelta e Premere invio per eseguirla, oppure Premere \"j\" e \"invio\"
+per saltare questo passaggio  "
+
+read scelta
+
+case $scelta in
+    '1') nano /etc/pacman.d/mirrorlist
+
+        echo ""
+    ;;
+    '2') pacman -S reflector --needed #installazione di reflector
+
+         cp /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.backup #backup del file /etc/pacman.d/mirrorlist
+
+         reflector -l 3 -c Italy --save /etc/pacman.d/mirrorlist #esecuzione di reflector           nota:tutti i repo verranno aggiornati al punto 7
+
+        echo ""
+    ;;
+
+    'j')
+        echo ""
+    ;;
+    *)
+        echo ""
+    ;;
+
+
+esac
+
+read -p "Premere invio per continuare"
+
+##### 6 #######
+clear
+echo "ABILITAZIONE REPOSITORY 32 bit su Arch x86_64-------4
+
+Se si desidera eseguire applicazioni a 32 bit su Arch x86_64 (64 bit), attivare il repository [multilib].
+Senza di esso,non sarà possibile eseguire applicazioni a 32 bit su un sistema operativo a 64bit.
+Se si è installata la versione x86_64 di Arch (64bit), si consiglia di attivare il repository multilib.
+
+NON eseguire questo passaggio se si è già attivato il repository multilib durante l'installazione di Arch Linux
+
+Premere invio per continuare oppure \"j\" per saltare il passaggio."
+
+read -n1 a
+a=`echo $a | tr '[A-Z]' '[a-z]'`
+if [ "$a" != "j" ]; then
+echo "
+[multilib]
+Include = /etc/pacman.d/mirrorlist" >> /etc/pacman.conf #Aggiunta del repo multilib nel file /etc/pacman.conf
+
+read -p "repository multilib abilitato con successo. Premere invio per continuare"
+fi
+
+##### 7 #######
+clear
+echo "AGGIORNAMENTO REPOSITORY E INSTALLAZIONE AGGIORNAMENTI--------------5
+
+L'aggiornamento dei repository è necessario per continuare. non c'e alcun pericolo.
+L'installazione di eventuali aggiornamenti è FORTEMENTE consigliata.
+
+Cosa volete eseguire?
+
+ 1) Aggiornamento repository
+ 2) Aggiornamento repository E installazione aggiornamenti (CONSIGLIATO)
+
+ INFORMAZIONI AVANZATE
+ sarànno eseguiti i comandi
+
+ 1)pacman -Syy
+ 2)Pacman -Syyu
+
+Digitare il numero corrispondente all'alternativa scelta e Premere invio per eseguirla"
+
+read scelta
+
+case $scelta in
+    '1')
+        pacman -Syy #aggiornamento mirror
+        echo ""
+    ;;
+    '2') pacman -Syyu #aggiornamento mirror E installazione aggiornamenti
+        echo ""
+    ;;
+    'j')
+        echo ""
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+
+read -p "Premere invio per continuare"
+
+##### 8 #######
+clear
+echo "INSERIRE UTENTE---------------6
+E' altamente consigliato creare un utente personalizzato. Premere invio per continuare, inserendo il nome utente
+e poi la password.
+nota:se non avete particolari esigenze,questo utente andrà benissimo.
+
+INFORMAZIONI AVANZATE:
+L'utente sarà inserito nei gruppi standart.Essi sono audio,lp,network,optical,storage,video,wheel,games,power,scanner,sys e disk mentre la shell sarà la bash
+
+
+Premere invio per continuare oppure \"j\" per saltare il passaggio."
+
+read -n1 a
+a=`echo $a | tr '[A-Z]' '[a-z]'`
+if [ "$a" != "j" ]; then
+
+echo -n "scrivi il tuo nome utente [invio]:"
+read nome_utente                             #viene "preso" il nome utente
+
+useradd -m -g users -G audio,lp,network,optical,storage,video,wheel,games,power,scanner,sys,disk -s /bin/bash ${nome_utente} #viene creato l'utente con il nome dato prima
+
+passwd ${nome_utente} #viene scelta la password per il nuovo utente
+
+read -p "Premere invio per continuare"
+
+fi
+
+##### 9 #######
+clear
+echo "INSTALLARE SUDO---------------7
+E' consigliata l'installazione di sudo. Una volta effettuata l'installazione, verrà aperto visudo.
+Decommentare la stringa \"%wheel ALL=(ALL) NOPASSWD: ALL\".
+Poi salvare e chiudere con ctrl+o e ctrl+x
+
+Sudo (Super User DO) permette di effetuare da utente normale,per un breve periodo di tempo,comandi che altrimenti potrebbe eseguire solo l'utente root.
+Usare sudo invece di diventare root porta a una maggiore sicurezza,per questo l'installazione di sudo è consigliata.
+
+INFORMAZIONI AVANZATE
+Verrà usato l'editor 'nano' durante l'esecuzione di visudo.
+
+Premere invio per continuare oppure \"j\" per saltare il passaggio."
+
+read -n1 a
+a=`echo $a | tr '[A-Z]' '[a-z]'`
+if [ "$a" != "j" ]; then
+
+pacman -S sudo --needed #installazione di sudo
+
+EDITOR=nano visudo #avvio di visudo con l'editor nano
+
+read -p "Premere invio per continuare"
+fi
+
+##### 10 #######
+clear
+echo "INSTALLARE XORG---------------8
+Vuoi installare l'interfaccia grafica di base(xorg)?Senza installare xorg non potrai installare nessun DE.
+Xorg è quindi,almeno per il momento, fondamentale in un installazione dotata di interfaccia grafica.
+
+INFORMAZIONI AVANZATE
+Verranno installati i pacchetti 'xorg-server xorg-xinit xorg-server-utils'
+
+Premere invio per continuare oppure \"j\" per saltare il passaggio."
+
+read -n1 a
+a=`echo $a | tr '[A-Z]' '[a-z]'`
+if [ "$a" != "j" ]; then
+
+pacman -S xorg-server xorg-xinit xorg-server-utils --needed #Installazione di Xorg e dipendenze varie.
+
+read -p "Premere invio per continuare"
+fi
+
+######### 11 ########
+clear
+echo "INSTALLARE DBUS---------------9
+Installare dbus? Esso è richiesto per il DE grafico.
+
+INFORMAZIONI AVANZATE
+Sarà installato il pacchetto 'dbus'
+
+Premere invio per continuare oppure \"j\" per saltare il passaggio."
+
+read -n1 a
+a=`echo $a | tr '[A-Z]' '[a-z]'`
+if [ "$a" != "j" ]; then
+
+pacman -S dbus --needed #installazione di dbus
+
+read -p "Premere invio per continuare"
+fi
+
+##### 12 #######
+clear
+echo "INSTALLARE MESA---------------10
+Vuoi installare il supporto 3D (mesa)?
+Il 3D è inteso come accelerazione grafica,NON come 3D degli schermi 3D (con gli occhialini)
+è FORTEMENTE consigliato installare questo pacchetto.
+
+INFORMAZIONI AVANZATE
+Verranno installati i pacchetti 'mesa mesa-demos'
+
+Premere invio per continuare oppure \"j\" per saltare il passaggio."
+
+read -n1 a
+a=`echo $a | tr '[A-Z]' '[a-z]'`
+if [ "$a" != "j" ]; then
+
+pacman -S mesa mesa-demos --needed #installazione di mesa e dipendenza
+
+read -p "Premere un tasto per continuare"
+fi
+
+
+##### 13 #######
+clear
+echo "INSTALLARE DRIVER SCHEDA VIDEO---------------11
+
+E' indispensabile l'installazione di un driver per la scheda video se si vuole usare l'interfaccia grafica. Potete installare i soli driver della scheda che possiedi.
+L'installazione della scheda video può creare problemi (soprattutto con ATI e SIS), leggere in caso di problemi il wiki di arch
+ATTENZIONE:Per installare i driver proprietari,è necessario un procedimento più complesso rispetto a quelli liberi.Per questo ora si potranno installare solo i liberi
+(ad eccezione dei driver nvidia per le serie GeForce 6 e superiori).Per installare i proprietari,in caso di bisogno,consultare il wiki di Arch dopo l'installazione.
+
+ 1) per scheda video intel (liberi)
+ 2) per scheda video ATI (liberi)
+ 3) per scheda video Nvidia (liberi)
+ 4) per scheda video Nvidia (proprietari.ATTENZIONE:SOLO serie GeForce 6 e superiori [NV40 e nuovi] )
+ 5) per scheda video SIS (supporto incerto)
+ 6) per scheda video savage
+
+INFORMAZIONI AVANZATE
+Verranno installati i seguenti pacchetti:
+
+1)'xf86-video-intel' e 'lib32-intel-dri'
+2)'xf86-video-ati' e 'lib32-ati-dri'
+3)'xf86-video-nouveau' e 'lib32-nouveau-dri'
+4)'nvidia' e 'lib32-nvidia-utils'
+5)'xf86-video-sis'
+6)'xf86-video-savage'
+
+
+Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
+per saltare questo passaggio  "
+read scelta
+
+case $scelta in
+#installazione dei vari driver
+
+    '1')
+        pacman -S xf86-video-intel --needed
+
+        pacman -S lib32-intel-dri  --needed
+        echo ""
+    ;;
+    '2')
+        pacman -S xf86-video-ati  --needed
+
+        pacman -S lib32-ati-dri   --needed
+        echo ""
+    ;;
+    '3')
+        pacman -S xf86-video-nouveau --needed
+
+        pacman -S lib32-nouveau-dri  --needed
+        echo ""
+
+    ;;
+    '4')
+        pacman -S nvidia    --needed
+
+        pacman -S lib32-nvidia-utils --needed
+        echo ""
+
+    ;;
+    '5')
+        pacman -S xf86-video-sis --needed
+        echo ""
+    ;;
+    '6')
+        pacman -S xf86-video-savage --needed
+        echo ""
+    ;;
+
+    'j')
+        echo ""
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+
+read -p "Premere invio per continuare"
+
+##### 14 #######
+clear
+echo "INSTALLARE DRIVER TOUCHPAD E CONFIGURARE TOUCHPAD---------------12
+Il computer è dotato di touchpad? Occorre installare synaptics.
+
+1)Installare synaptics
+2)Installare synaptic e abilitare lo scrolling verticale del touchpad
+In questo modo potrai usare il touchpad e,se hai scelto l'alternativa 2 e se il tuo touchpad lo supporta, lo scrolling verticale del touchpad
+
+INFORMAZIONI AVANZATE
+Verrà installato il pacchetto 'synaptics' e , nel caso della scelta '2', verranno aggiunte delle strinche a /etc/X11/xorg.conf.d/10-synaptics.conf
+
+Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
+per saltare questo passaggio  "
+
+
+read scelta
+
+case $scelta in
+    '1')
+        pacman -S xf86-input-synaptics --needed   #installazione di synaptics
+        echo ""
+    ;;
+    '2')
+	pacman -S xf86-input-synaptics --needed
+	echo "Section \"InputClass\"
+        Identifier \"touchpad catchall\"
+        Driver \"synaptics\"
+        MatchIsTouchpad \"on\"
+        MatchDevicePath \"/dev/input/event*\"
+        Option \"TapButton1\" \"1\"
+        Option \"TapButton2\" \"2\"
+        Option \"TapButton3\" \"3\"
+	Option \"VertEdgeScroll\" \"on\"
+EndSection" | tee /etc/X11/xorg.conf.d/10-synaptics.conf #abilitazone dello scrolling verticale
+        echo ""
+    ;;
+    'j')
+        echo ""
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+read -p "Premere invio per continuare"
+
+######### 15 ########
+clear
+echo "INSTALLARE YAOURT---------13
+Vuoi installare Yaourt per la gestione dei pacchetti presenti in AUR?
+AUR (Arch User Repository) è un repository gestito dagli utenti,non ufficiale, (simile ai ppa di ubuntu)
+Grazie a yaourt si potranno installare facilmente pacchetti presenti in quel repository.
+Da ora in poi,lo script si comporterà come se yaourt fosse installato.Se si salta questo passaggio,non si potranno eseguire diverse parti dello script.
+
+INFORMAZIONI AVANZATE
+Verrà aggiunto il repo 'archlinuxfr' a /etc/pacman.conf e da li sarà installato il pacchetto 'yaourt'
+Premere un tasto per continuare oppure \"j\" per saltare il passaggio."
+
+read -n1 a
+a=`echo $a | tr '[A-Z]' '[a-z]'`
+if [ "$a" != "j" ]; then
+echo "
+[archlinuxfr]
+Server = http://repo.archlinux.fr/\$arch" | tee -a /etc/pacman.conf #Aggiunta del repo "archlinuxfr"
+
+pacman -Syy                                  #aggiornamento repository
+
+pacman -S yaourt --needed                        #installazione di yaourt
+
+read -p "Premere un tasto per continuare"
+fi
+
+############## AVVISO ####################
+clear
+
+echo "AVVISO
+D'ora in poi,spesso verrà usato il tool 'yaourt' per scaricare e installare da AUR.
+
+L'opzione '--noconfirm'permette di evitare le moltissime richieste di conferma da parte di yaourt,che talvolta sono davvero fastidiose.
+Mettere l'opzione --noconfirm quindi aumenta notevolmente la comodità di yaourt, ma va contro i principi 'K.I.S.S.' di Arch,in quanto  non permette di modificare i file di installazione dei vari tool al momento del download (cosa necessaria un numero irrisorio di volte,comunque).
+
+Si è scelto quindi di far scegliere all'utente se usare tale opzione o meno ,in tutti i  passaggi.
+Quando sarà possibile usare l'opzione \"noconfirm\",verrete avvisati.Sarà necessario aggiungere 'a' alla scelta, ad esempio '1a'
+
+ATTENZIONE: gli apici (' ') NON vanno messi.Quindi non si digiterà \"'1a'\" ma \"1a\" (senza gli apici).Gli apici sono usati quindi solo per evidenziare delle parti del testo e NON vanno digitati.
+Premere un tasto per continuare."
+
+read -n1 a
+a=`echo $a | tr '[A-Z]' '[a-z]'`
+if [ "$a" != "j" ]; then
+echo "
+     Grazie per l'attenzione"
+read -p "Premere un tasto per continuare"
+fi
+
+#####Scelta Desktop
+clear
+I = "0"
+while [$I = 0] do
+echo"Scegliere Ambiente Desktop
+
+     1.Xfce
+     2.KDE
+     3.Gnome
+
+Digita scelta e premere invio oppure \"j\" per saltare il passaggio."
+read desktop
+if [$desktop = 1] then;
+  echo "Xfce è disponibile:
+
+        1.completo
+        2.medio
+        3.minimale
+        4.xfce core
+
+INFORMAZIONI AGGIUNTIVE (pacchetti installati)
+
+1.completo: xfce4 gnome-icon-theme fortune-mod dbus gamin xfce4-goodies gvfs gvfs-afc thunar-volman #2
+2.medio: xfce4 gnome-icon-theme fortune-mod dbus gamin gvfs gvfs-afc thunar-volman #1
+3.minimale: xfce4
+4.xfce-core: xfwm4 xfce4-panel xfdesktop thunar xfce4-session xfce4-settings xfce4-appfinder xfce-utils xfconf
+I pacchetti 'gvfs gvfs-afc thunar-volman' provengono da AUR
+Digitare un opzione e premere invio ....."
+read $subdesktop
+case $subdesktop in
+    '1') pacman -S xfce4 gnome-icon-theme fortune-mod dbus gamin xfce4-goodies --needed
+       yaourt -S gvfs gvfs-afc thunar-volman --needed
+       echo "exec dbus-launch --exit-with-session startxfce4" | tee /home/${nome_utente}/.xinitrc
+       pacman -S slim archlinux-themes-slim --needed
+       systemctl enable slim.service  #con "enable", i login manager vengono lanciati all'avvio del sistema in automatico.
+       echo ""
+       I=$[$I+1]
+  ;;
+    '2') pacman -S xfce4 gnome-icon-theme fortune-mod dbus gamin --needed
+        yaourt -S gvfs gvfs-afc thunar-volman --needed
+        echo "exec dbus-launch --exit-with-session
+        startxfce4" | tee /home/${nome_utente}/.xinitrc
+        pacman -S slim archlinux-themes-slim --needed
+        systemctl enable slim.service  #con "enable", i login manager vengono lanciati all'avvio del sistema in automatico.
+        echo ""
+        I=$[$I+1]
+   ;;
+    '3') pacman -S xfce4 --needed
+         echo "exec dbus-launch --exit-with-session startxfce4" | tee /home/${nome_utente}/.xinitrc
+         echo ""
+         pacman -S slim archlinux-themes-slim --needed
+         systemctl enable slim.service  #con "enable", i login manager vengono lanciati all'avvio del sistema in automatico.
+         echo ""
+         I=$[$I+1]
+   ;;
+    '4') Pacman -S xfwm4 xfce4-panel xfdesktop thunar xfce4-session xfce4-settings xfce4-appfinder xfce-utils xfconf #i "core packages" di xfce
+         echo "exec dbus-launch --exit-with-session startxfce4" | tee /home/${nome_utente}/.xinitrc
+         pacman -S slim archlinux-themes-slim --needed
+         systemctl enable slim.service  #con "enable", i login manager vengono lanciati all'avvio del sistema in automatico.
+         echo ""
+         I=$[$I+1]
+         ;;
+         'j')
+             echo ""
+         ;;
+         *)
+             echo ""
+         ;;
+      esac
+read -p "Premere invio per continuare"
+
+elif [ $desktop = 2 ]; then
+  echo"Kde è disponibile
+
+        1.completo
+        2.medio
+        3.minimale
+
+INFORMAZIONI AGGIUNTIVE (pacchetti installati)
+
+        1.completo: plasma-meta kde-l10n-it kde-applications-meta
+        2.medio: plasma-meta kde-l10n-it
+        3.minimale: kdebase phonon-gstreamer xorg-xinit xorg-server-utils mesa
+        "
+read subdesktop
+case $subdesktop in
+  '1') pacman -S plasma-meta kde-l10n-it kde-applications-meta
+  echo " exec startkde" | tee /home/${nome_utente}/.xinitrc
+  pacman -S kdebase-workspace archlinux-themes-kdm  --needed
+  systemctl enable kdm.service
+  echo ""
+  I=$[$I+1]
+    ;;
+    '2') pacman -S plasma-meta kde-l10n-it
+    echo " exec startkde" | tee /home/${nome_utente}/.xinitrc
+    pacman -S kdebase-workspace archlinux-themes-kdm  --needed
+    systemctl enable kdm.service
+    echo ""
+    I=$[$I+1]
+    ;;
+        '3') pacman -S kdebase phonon-gstreamer xorg-xinit xorg-server-utils mesa
+    echo " exec startkde" | tee /home/${nome_utente}/.xinitrc
+    pacman -S kdebase-workspace archlinux-themes-kdm  --needed
+    systemctl enable kdm.service
+    echo ""
+    I=$[$I+1]
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+read -p "Premere invio per continuare"
+
+elif [$desktop = 3]; then
+    echo"Gnome è disponibile:
+
+        1. completa
+        2. minimale
+
+        INFORMAZIONI AGGIUNTIVE (pacchetti)
+        completa: gnome gnome-extra gnome-tweak-tool
+        minimale: gnome
+
+        Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
+        per saltare questo passaggio e/o installare un altro DE"
+read subdesktop
+case $subcase in
+  '1')pacman -S gnome gnome-extra gnome-tweak-tool
+  echo "exec gnome-session" | tee /home/${nome_utente}/.xinitrc
+  pacman -S gdm
+  systemctl enable gdm.service
+  echo ""
+  I=$[$I+1]
+  ;;
+  '2') pacman -S gnome --needed
+  echo "exec gnome-session" | tee /home/${nome_utente}/.xinitrc
+  pacman -S gdm
+  systemctl enable gdm.service
+  echo ""
+  I=$[$I+1]
+  *)echo ""
+    ;;
+esac
+  else
+  echo"si è deciso di non installare nessun desktop environment"
+  I=$[$I+1]
+fi
+done
+
+#########XX########
+clear
+echo "INSTALLARE GKSU---------------25
+E' consigliata l'installazione di gksu se si avrà intenzione di usare programmi di GNOME (gtk)
+
+Gksu è un interfaccia grafica a sudo per i programmi GTK,ed è sempre consigliato lanciare programmi gtk con gksu invece che con il normale sudo.
+Per KDE esiste 'kdesu' ma non è necessario installarlo,in quanto è installato di default in un'installazione di KDE.
+
+INFORMAZIONI AVANZATE
+Verra installato il pacchetto 'gksu'
+
+Premere un tasto per continuare oppure \"j\" per saltare il passaggio."
+
+read -n1 a
+a=`echo $a | tr '[A-Z]' '[a-z]'`
+if [ "$a" != "j" ]; then
+pacman -S gksu --needed
+
+read -p "Premere un tasto per continuare"
+fi
+
+######### 26 ########
+clear
+echo "INSTALLARE CONTROLLO DISPOSITIVI RIMOVIBILI E DEVICE---------26
+Vuoi installare gli strumenti per la gestione dei dispositivi rimovibili e dei devices interni?
+
+INFORMAZIONI AVANZATE
+Verranno installati i pacchetti 'polkit-use-wheel-group polkit desktop-privileges polkit-kde'
+
+Premere un tasto per continuare oppure \"j\" per saltare il passaggio."
+
+
+read -n1 a
+a=`echo $a | tr '[A-Z]' '[a-z]'`
+if [ "$a" != "j" ]; then
+yaourt -S  polkit-use-wheel-group polkit desktop-privileges polkit-kde --needed
+
+read -p "Premere un tasto per continuare"
+fi
+
+
+######### 27 ########
+clear
+echo "INSTALLARE FONTS TTF-DEJAVU---------27
+Vuoi installare i fonts ttf-dejavu?
+I font dejavu sono un insieme di font di alta qualità
+
+INFORMAZIONI AVANZATE
+Verrà installato il pacchetto 'ttf-dejavu'
+Premere un tasto per continuare oppure \"j\" per saltare il passaggio."
+read -n1 a
+a=`echo $a | tr '[A-Z]' '[a-z]'`
+if [ "$a" != "j" ]; then
+
+yaourt -S ttf-dejavu --needed
+
+read -p "Premere un tasto per continuare"
+fi
+
+
+######### 28 ########
+#INSTALLARE PACCHETTI PER APPLICAZIONE DI STAMPA
+clear
+echo "INSTALLAZIONE PROGRAMMI PER LA STAMPA----------------28
+
+Verranno ora installati i pacchetti essenziali per la stampa e per la stampa su file pdf.
+Successivamente sarà necessario configurare cups e cups-pdf secondo la guida del wiki di Arch
+
+1)Si usa gnome,xfce e si vuole far avviare cups a ogni avvio del sistema
+
+2)Si usa KDE e si vuole far avviare cups a ogni avvio del sistema
+
+3)Si usa gnome,xfce, e NON si vuole far avviare cups a ogni avvio del sistema
+
+4)Si usa KDE e  NON si vuole far avviare cups a ogni avvio del sistema
+
+INFORMAZIONI AVANZATE
+Verranno installati i pacchetti
+
+1)cups gutenprint cups-pdf system-config-printer-common system-config-printer-gnome foomatic-{db,db-engine} a2ps ghostscript gsfonts cups-usblp
+2)kdeadmin-kuser cups gutenprint system-config-printer cups-pdf kdeutils-printer-applet kdeadmin-system-config-printer-kde
+
+e verrà dato il comando 'systemctl enable cups.serivice' per far avviare cups ad ogni avvio.
+Con la scelta 3 verranno installati gli stessi pacchetti della scelta 1  e con la scelta 4 gli stessi della scelta 2, ma in questi ultimi due casi (3 e 4) cups NON verrà avviato
+ad ogni avvio del sistema.
+Molti pacchetti provengono da AUR
+
+Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
+per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt,aggiungere 'a' alla scelta (es. '1a')"
+
+read scelta
+
+case $scelta in
+    '1')
+        yaourt -S cups gutenprint cups-pdf system-config-printer-common system-config-printer-gnome foomatic-{db,db-engine} a2ps ghostscript gsfonts cups-usblp --needed
+
+        systemctl enable cups.service
+        echo ""
+    ;;
+    '2')
+        yaourt -S kdeadmin-kuser cups gutenprint system-config-printer cups-pdf kdeutils-printer-applet kdeadmin-system-config-printer-kde --needed
+        systemctl enable cups.service
+
+        echo ""
+   ;;
+   '3')
+       yaourt -S cups gutenprint cups-pdf system-config-printer-common system-config-printer-gnome foomatic-{db,db-engine} a2ps ghostscript gsfonts cups-usblp --needed
+        echo ""
+    ;;
+    '4')
+         yaourt -S kdeadmin-kuser cups gutenprint system-config-printer cups-pdf kdeutils-printer-applet kdeadmin-system-config-printer-kde --needed
+    ;;
+    '1a')
+        yaourt -S cups gutenprint cups-pdf system-config-printer-common system-config-printer-gnome foomatic-{db,db-engine} a2ps ghostscript gsfonts cups-usblp --needed --noconfirm
+        systemctl enable cups.service
+        echo ""
+    ;;
+    '2a')
+        yaourt -S kdeadmin-kuser cups gutenprint system-config-printer cups-pdf kdeutils-printer-applet kdeadmin-system-config-printer-kde --needed --noconfirm
+        systemctl enable cups.service
+        echo ""
+   ;;
+   '3a')
+       yaourt -S cups gutenprint cups-pdf system-config-printer-common system-config-printer-gnome foomatic-{db,db-engine} a2ps ghostscript gsfonts cups-usblp --needed --noconfirm
+        echo ""
+    ;;
+    '4a')
+         yaourt -S kdeadmin-kuser cups gutenprint system-config-printer cups-pdf kdeutils-printer-applet kdeadmin-system-config-printer-kde --needed --noconfirm
+    ;;
+    'j')
+        echo ""
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+read -p "Premere un tasto per continuare"
+
+########## 29 ###########
+
+clear
+echo "INSTALLAZIONE SOFTWARE PER LO SCANNER-------------29
+
+Verranno installati i pacchetti essenziali per il funzionamento degli scanner.
+
+Se non possiede uno scanner,  può saltare questo passaggio.
+
+Verranno installati i seguenti pacchetti: sane e simple-scan oppure scan e skanlite (per KDE)
+
+1)Si vogliono i pacchetti dello scanner per XFCE,GNOME.
+2)Si vogliono i pacchetti dello scanner per KDE
+
+INFORMAZIONI AVANZATE
+Verranno installati i pacchetti
+1) sane simple-scanner
+2)sane skanlite
+skanlite proviene da AUR
+
+Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
+per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt, digitare '2a'"
+
+read scelta
+
+case $scelta in
+    '1')
+        pacman -S sane simple-scan  --needed
+
+        echo ""
+    ;;
+    '2')
+        yaourt -S sane skanlite --needed
+
+        echo ""
+   ;;
+     '2a')
+        yaourt -S sane skanlite --needed --noconfirm
+
+        echo ""
+   ;;
+    'j')
+        echo ""
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+
+read -p "Premere un tasto per continuare"
+
+########## 30 ###############
+# INSTALLARE DRIVER DELLE STAMPANTI PIÙ COMUNI
+clear
+echo "INSTALLAZIONE DRIVER STAMPANTI--------------30
+
+Potete scegliere di installare i driver della stampante che possedete. Per le Brother è possibile che il driver installato non sia quello corretto.
+La miglior soluzione è una ricerca su arch wiki.I seguenti driver non valgono per le stampanti di rete.
+
+ 1) per stampanti HP
+ 2) per stampanti Samsung
+ 3) per stampanti Brother (hl2130)
+ 4)Per stampanti HP della serie 'LaserJet' come la 1018
+
+ INFORMAZIONI AVANZATE
+ Verranno installati i pacchetti
+
+ 1)hplip
+ 2)splix samsung_cms
+ 3)brother-hl2130
+ 4)foo2zjs
+
+I pacchetti brother-hl2130 e foo2zjs provengono da AUR
+
+Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
+per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt, digitare '3a' o '4a' a seconda se si vuole la scelta '3' o '4' "
+read scelta
+case $scelta in
+    '1')
+        pacman -S hplip --needed
+        echo ""
+    ;;
+    '2')
+        yaourt -S splix samsung_cms --needed
+        echo ""
+    ;;
+    '3')
+        yaourt -S brother-hl2130 --needed
+        echo ""
+    ;;
+    '4')
+        yaourt -S foo2zjs  --needed
+        echo ""
+    ;;
+    '3a')
+        yaourt -S brother-hl2130 --needed --noconfirm
+        echo ""
+    ;;
+    '4a')
+        yaourt -S foo2zjs  --needed --noconfirm
+        echo ""
+    ;;
+    'j')
+        echo ""
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+read -p "Premere un tasto per continuare"
+echo "INSTALLAZIONE SOFTWARE----------------31
+
+Desideri installare i programmi solitamente compresi nel menu \"Accessori\", quali editor di testo, calcolatrice, ricerca file, gestore archivi,
+gestione password, masterizzazione?
+
+1)Voglio installare pacchetti per Xfce
+2)Voglio installare pacchetti per KDE
+3)Voglio installare pacchetti per GNOME o cinnamon
+
+INFORMAZIONI AVANZATE
+
+Verranno installati i seguenti pacchetti: leafpad catfish thunar galculator recoll file-roller xfburn keepassx p7zip, rar, unrar,
+unzip per  XFCE
+
+Verranno installati i seguenti pacchetti: gedit  nautilus gcalctool file-roller gnome-search-tool gnome-screenshot keepassx brasero rar unrar
+unzip p7zip  per  GNOME
+
+Verranno installati i seguenti pacchetti: konsole kate dolphin k3b kcalc  keepassx kdeutils-ark p7zip rar unrar
+unzip per  KDE
+Diversi pacchetti provengono da AUR
+
+Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
+per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt, aggiungere 'a' alla scelta (es. '1a')"
+
+  read scelta
+
+case $scelta in
+    '1')
+        yaourt -S leafpad catfish findutils mlocate galculator recoll keepassx file-roller p7zip rar unrar unzip  --needed
+        echo ""
+    ;;
+    '2')
+        yaourt -S kdebase-konsole kdesdk-kate kdebase-katepart kdebase-dolphin kdesdk-dolphin-plugins k3b kdeutils-kcalc kdeutils-ark keepassx p7zip rar unrar unzip --needed
+        echo ""
+    ;;
+    '3')
+        yaourt -S gedit  nautilus gcalctool file-roller gnome-search-tool gnome-screenshot keepassx brasero rar unrar unzip p7zip --needed
+        echo ""
+    ;;
+    'j')
+        echo ""
+
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+read -p "Premere un tasto per continuare"
+
+########## 32 ###############
+# INSTALLARE PACCHETTI DI GRAFICA
+clear
+echo "INSTALLAZIONE SOFTWARE---------------32
+
+Desideri installare i programmi solitamente presenti nella sezione \"grafica\", quali gestore immagini, visualizzatore immagini, visualizzatore pdf etc...?
+
+1)Installare pacchetti per XFCE
+2)Installare pacchetti per GNOME e/o cinnamon
+3)Installare pacchetti per KDE
+
+INFORMAZIONI AVANZATE
+
+Verranno installati i seguenti pacchetti:shotwell evince ristretto per XFCE
+Verranno installati i seguenti pacchetti:shotwell evince eye-of-gnome per GNOME
+Verranno installati i seguenti pacchetti:digkam gwenview okular per KDE
+Alcuni pacchetti provengono da AUR
+
+Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
+per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt, aggiungere 'a' alla scelta (es. '1a')"
+
+read scelta
+
+case $scelta in
+    '1')
+        yaourt -S shotwell evince ristretto  --needed
+        echo ""
+    ;;
+    '2')
+        yaourt -S shotwell evince eog eog-plugins --needed
+        echo ""
+      ;;
+    '3')
+        yaourt -S digikam kipi-plugins kdegraphics-gwenview kdegraphics-okular --needed
+        echo ""
+    ;;
+
+    '1a')
+        yaourt -S shotwell evince ristretto  --needed --noconfirm
+        echo ""
+    ;;
+    '2a')
+        yaourt -S shotwell evince eog eog-plugins --needed --noconfirm
+        echo ""
+    ;;
+    '3a')
+        yaourt -S shotwell evince gpicview --needed --noconfirm
+        echo ""
+    ;;
+    '4a')
+        yaourt -S digikam kipi-plugins kdegraphics-gwenview kdegraphics-okular --needed --noconfirm
+        echo ""
+    ;;
+
+ 'j')
+        echo ""
+
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+
+read -p "Premere un tasto per continuare"
+
+########## 33 ###############
+clear
+echo "INSTALLAZIONE SOFTWARE--------------
+
+Gimp è un programma di fotoritocco avanzato comparabile con photoshop.
+
+1)Gimp
+2)Gimp inclusi molti plugin per gimp (consigliato)
+
+INFORMAZIONI AVANZATE
+Verrano installati i pacchetti
+
+1) gimp gimp-help-it
+2)gimp  gimp-gap gimp-help-it gimp-ufraw xsane-gimp  gimp-plugin-fblur gimp-plugin-gmic gimp-plugin-lqr gimp-plugin-mathmap gimp-plugin-wavelet-decompose gimp-plugin-wavelet-denoise gimp-refocus
+
+Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
+per saltare questo passaggio"
+
+read scelta
+
+case $scelta in
+    '1')
+        pacman -S gimp gimp-help-it  --needed
+        echo ""
+    ;;
+    '2')
+        pacman -S gimp  gimp-gap gimp-help-it gimp-ufraw xsane-gimp  gimp-plugin-fblur gimp-plugin-gmic gimp-plugin-lqr gimp-plugin-mathmap gimp-plugin-wavelet-decompose gimp-plugin-wavelet-denoise gimp-refocus --needed
+        echo ""
+    ;;
+
+ 'j')
+        echo ""
+
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+
+read -p "Premere un tasto per continuare"
+
+########## 34 ###############
+# INSTALLARE CLIENT DI POSTA ED ALTRI SERVIZI INTERNET
+clear
+echo "INSTALLAZIONE SOFTWARE------------34
+
+Thunderbird,evolution e kmail sono delle applicazioni per la gestione della posta elettronica.
+Potete scegliere tra:
+
+1)Thunderbird (ottimo per tutti i DE)
+2)Kmail (per KDE)
+3)Evolution (per GNOME)
+4)Clawsmail (GTK+)
+
+
+INFORMAZIONI AVANZATE
+Verranno installati i pacchetti
+
+1)thunderbird thunderbird-i18n-it
+
+2)kdepim-kmail
+
+3)evolution
+
+4)claws-mail
+
+Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
+per saltare questo passaggio"
+
+read scelta
+
+case $scelta in
+    '1')
+        pacman -S thunderbird  thunderbird-i18n-it --needed
+        echo ""
+    ;;
+    '2')
+        pacman -S kdepim-kmail --needed
+        echo ""
+    ;;
+    '3')
+        pacman -S evolution --needed
+        echo ""
+   ;;
+   '4')
+       pacman -S claws-mail --needed
+       echo ""
+  ;;
+ 'j')
+        echo ""
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+
+read -p "Premere un tasto per continuare"
+
+
+########## 35 ###############
+clear
+echo "INSTALLAZIONE SOFTWARE-------------35
+
+Pidgin e xchat sono due programmi utili per la messaggistica e la chat IRC.
+
+
+1)Vorrei xchat e pidgin
+2)Vorrei quassel e kopete
+
+INFORMAZIONI AVANZATE
+Verranno installati i seguenti pacchetti: pidgin, xchat per XFCE,GNOME,cinnamon,openbox ed E17
+Verranno installati i seguenti pacchetti: quassel, kdenetwork-kopete, kdeplasma-addons-runners-kopete  per KDE
+
+Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
+per saltare questo passaggio"
+
+read scelta
+
+case $scelta in
+    '1')
+        pacman -S xchat pidgin --needed
+        echo ""
+    ;;
+    '2')
+        pacman -S quassel kdenetwork-kopete kdeplasma-addons-runners-kopete --needed
+        echo ""
+    ;;
+
+ 'j')
+        echo ""
+
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+
+read -p "Premere un tasto per continuare"
+
+
+
+########## 36 ###############
+clear
+echo "INSTALLAZIONE SOFTWARE-------------36
+
+Transmission è uno dei piu semplici e popolari client torrent disponibili per GNU/Linux.È disponbile sia per KDE che per GNOME, cinnamon, openbox, XFCE ed e17
+Ktorrent è un client torrent per KDE presente di default in molte distribuzioni con KDE.
+Qbittorrent (solo AUR) è uno dei migliori client torrent in assoluto.Per KDE.
+Deluge è un ottimo client torrent per GNOME,cinnamon,XFCE,openbox ed E17
+
+1)Installare Transmission-gtk (per GNOME,XFCE ecc.)
+2)Installare Transmission-qt (per KDE)
+3)Installare Ktorrent (KDE)
+4)Installare Qbittorent (KDE)
+5)Installare Deluge (GNOME,XFCE ecc.)
+
+INFORMAZIONI AVANZATE
+Qbittorent proviene da AUR
+
+digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
+per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt con la scelta 4, dare '4a'"
+
+  read scelta
+
+case $scelta in
+    '1')
+        pacman -S transmission-gtk --needed
+        echo ""
+    ;;
+    '2')
+        pacman -S transmission-qt --needed
+        echo ""
+    ;;
+    '3')
+        pacman -S ktorrent --needed
+        echo ""
+    ;;
+    '4')
+        yaourt -S qbittorrent --needed
+        echo ""
+    ;;
+
+    '4a')
+         yaourt -S qbittorrent --needed --noconfirm
+         echo ""
+    ;;
+    '5')
+        pacman -S deluge --needed
+        echo ""
+    ;;
+
+ 'j')
+        echo ""
+
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+
+read -p "Premere un tasto per continuare"
+
+
+
+########## 37 ###############
+clear
+echo "INSTALLAZIONE SOFTWARE-------------37
+
+Un player multimediale è un programma che consente di visualizzare tutti i tipi di file audio e video.
+ 1)Parole è il lettore multimediale leggero e semplice sviluppato per l'ambiente grafico xfce (SCELTA CONSIGLIATA PER XFCE)
+ 2)Vlc è il lettore multimediale piu usato al mondo. Ottimo su qualsiasi DE
+ 3)Totem è il lettore multimediale dell'ambiente grafico gnome.
+ 4)Bangarang è un player multimediale per KDE.(solo AUR)
+ 5)Smplayer è un player leggero ma estremamente funzionale,ottimo su tutti i DE
+
+INFORMAZIONI AVANZATE
+Verranno installati i pacchetti
+
+1)parole
+
+2)vlc
+
+3)totem
+
+4)bangarang
+
+5)smplayer smplayer-themes
+'bangarang' proviene da AUR.
+
+Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
+per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt per la scelta '4', dare '4a'  "
+read scelta
+
+case $scelta in
+    '1')
+        pacman -S parole --needed
+        echo ""
+    ;;
+    '2')
+        pacman -S vlc --needed
+        echo ""
+    ;;
+    '3')
+        pacman -S totem  --needed
+        echo ""
+    ;;
+    '4')
+        yaourt -S bangarang --needed
+        echo ""
+    ;;
+
+    '4a')
+        yaourt -S bangarang --needed --noconfirm
+        echo ""
+    ;;
+    '5')
+        pacman -S smplayer smplayer-themes --needed
+        echo ""
+    ;;
+
+    'j')
+        echo ""
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+
+read -p "Premere un tasto per continuare"
+
+########## 38 ###############
+clear
+echo "INSTALLAZIONE SOFTWARE-------------38
+
+Vuoi installare un gestore di musica?
+
+ 1)gmusicbrowser è un programma leggero e semplice per la gestione delle librerie musicali. (SCELTA CONSIGLIATA PER XFCE).
+ 2)Banshee è un gestore delle librerie musicali semplice e completo per GNOME
+ 3)Rhythmbox è un media player ispirato ad iTunes e sviluppato per l'ambiente grafico GNOME.
+ 4)Clementine è un moderno gestore della musica basato su Amarok.Per KDE
+ 5)Amarok è uno dei migliori gestori musicali al mondo,sviluppato per KDE
+
+ INFORMAZIONI AVANZATE
+ Verranno installati i pacchetti
+
+ 1)gmusicbrowser
+
+ 2) banshee
+
+ 3) rhythmbox
+
+ 4) clementine
+
+ 5) amarok kdeplasma-addons-runners-audioplayercontrol
+ gmusicbrowser proviene da AUR
+
+Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
+per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt per la scelta '1', dare '1a'  "
+read scelta
+
+case $scelta in
+    '1')
+        yaourt -S gmusicbrowser --needed
+        echo ""
+    ;;
+    '1a')
+        yaourt -S gmusicbrowser --needed --noconfirm
+        echo ""
+    ;;
+    '2')
+        pacman -S banshee --needed
+        echo ""
+    ;;
+    '3')
+        pacman -S rhythmbox  --needed
+        echo ""
+    ;;
+    '4')
+        pacman -S clementine --needed
+        echo ""
+    ;;
+    '5')
+        pacman -S amarok kdeplasma-addons-runners-audioplayercontrol --needed
+        echo ""
+    ;;
+    'j')
+        echo ""
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+read -p "Premere un tasto per continuare"
+
+########## 39 ###############
+clear
+echo "INSTALLAZIONE SOFTWARE-------------39
+
+
+Desideri installare i programmi di sistema utili in alcuni casi?
+
+
+INFORMAZIONI AVANZATE
+Verranno installati i seguenti pacchetti:'ibus, unetbootin, imagewriter'
+
+Unetbootin e Imagewriter permettono di scrivere delle immagini ISO su supporti USB.
+Ibus 'Intelligent input bus' è un tool più complesso e particolare,si consiglia di visitare la wiki di Arch per ulteriori informazioni.
+
+
+Dare '1' e invio per installarli oppure Premere \"j\" per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt, dare '1a' e invio"
+read scelta
+
+case $scelta in
+    '1')
+        yaourt -S ibus unetbootin imagewriter --needed
+        echo ""
+    ;;
+    '1a')
+       yaourt -S  ibus unetbootin imagewriter --needed
+        echo ""
+    ;;
+
+    'j')
+        echo ""
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+read -p "Premere un tasto per continuare"
+
+########## 40 ###############
+clear
+echo "INSTALLAZIONE SOFTWARE-------------40
+
+E'possibile installare una suite di ufficio tre due alternative:
+ 1)LibreOffice è una suite che offre sei applicazioni ricche di funzionalità per tutte le necessità di produzione di documenti e elaborazione dati: Writer, Calc, Impress,
+ Draw, Math e Base.(SCELTA CONSIGLIATA)
+ 2)Abiword e Gnumeric sono un alternativa leggera a libreoffice per GNOME.
+ 3)Calligra è una suite d'ufficio per KDE.
+
+Si consiglia Libreoffice.
+
+INFORMAZIONI AVANZATE
+Si installeranno i seguenti pacchetti
+
+1)libreoffice libreoffice-it witalian hunspell-it
+
+2)abiword gnumeric
+
+3)calligra calligra-l10n-it
+'witalian' è disponibile solo su AUR
+
+Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
+per saltare questo passaggio  "
+read scelta
+
+case $scelta in
+    '1')
+        yaourt -S libreoffice libreoffice-it witalian hunspell-it  --needed
+        echo ""
+    ;;
+    '2')
+        pacman -S abiword gnumeric --needed
+        echo ""
+    ;;
+    '3')
+        pacman -S calligra calligra-l10n-it --needed
+        echo ""
+    ;;
+    'j')
+        echo ""
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+read -p "Premere un tasto per continuare"
+
+########## 41 ###############
+clear
+echo "INSTALLAZIONE SOFTWARE-------------41
+
+Desideri installare codecs, fonts di parti terze proprietarie, pacchetti opensource sostitutivi di java?
+è consigliato installare i seguenti pacchetti per consentire la corretta visualizzazione di video, canzoni ecc...
+In alcuni Paesi (non l'Italia) è vietata l'installazione di codecs proprietari, informati sulle leggi vigenti prima di installare questi pacchetti.
+Durante l'installazione verrà chiesto di accettare delle licenze, scegli ok o accetto e prosegui.
+
+INFORMAZIONI AVANZATE
+Verranno installati i seguenti pacchetti: jre7-openjdk  flashplugin ttf-ms-fonts gstreamer0.10-good-plugins icedtea-web-java7
+Alcuni pacchetti provengono da AUR
+
+Premere '1' e invio per installarli oppure Premere \"j\" per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt, dare '1a' e invio"
+  read scelta
+
+case $scelta in
+    '1')
+        yaourt -S jre7-openjdk  ttf-ms-fonts gstreamer0.10-plugins flashplugin icedtea-web-java7 --needed
+        echo ""
+    ;;
+    '1a')
+        yaourt -S  jre7-openjdk ttf-ms-fonts gstreamer0.10-plugins flashplugin icedtea-web-java7 --needed --noconfirm
+        echo ""
+    ;;
+
+    'j')
+        echo ""
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+read -p "Premere un tasto per continuare"
+
+
+########## 42 ###############
+clear
+echo "INSTALLAZIONE SOFTWARE-------------42
+
+Vuoi installare anche programmi per la sicurezza, per la pulizia sicura delle tracce?
+
+Verranno installati i seguenti pacchetti:bleachbit, wipe e wipetrash per XFCE,GNOME,cinnamon,openbox ed E17
+Verranno installati i seguenti pacchetti:sweeper e wipe  per KDE
+
+1)Vorrei bleachbit, wipe e wipetrash
+2)Vorrei sweeper e wipe
+
+INFORMAZIONI AVANZATE
+Verranno installati i seguenti pacchetti
+
+1) bleachbit wipe wipetrash
+
+2) kdeutils-sweeper wipe
+bleachbit è su AUR
+
+Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
+per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt con la prima scelta,dare '1a' e invio  "
+read scelta
+
+case $scelta in
+    '1')
+        yaourt -S bleachbit wipe wipetrash --needed
+        echo ""
+    ;;
+    '1a')
+        yaourt -S bleachbit wipe wipetrash --needed --noconfirm
+        echo ""
+    ;;
+    '2')
+        pacman -S kdeutils-sweeper wipe --needed
+        echo ""
+    ;;
+
+    'j')
+        echo ""
+    ;;
+
+    *)
+        echo ""
+    ;;
+esac
+read -p "Premere un tasto per continuare"
+
+
+########## 43 ###############
+clear
+echo "INSTALLAZIONE SOFTWARE-------------43
+
+L'installazione di una antivirus (così come di un firewall) su linux è ritenuta superflua. Tuttavia, è buona regola installare un antivirus per evitare di essere portatori sani di virus che possono passare attraverso i nostri computer.
+La presenza di un antivirus e di un firewall è obbligatoria per legge per determinate professioni ed imprese.
+
+INFORMAZIONI AVANZATE
+Verranno installati i seguenti pacchetti:clamtk firestarter
+
+Premere '1' e invio  per installarli oppure Premere \"j\" per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt, dare '1a' e invio"
+
+read scelta
+
+case $scelta in
+    '1')
+        yaourt -S clamtk firestarter --needed
+        echo ""
+    ;;
+    '1a')
+        yaourt -S clamtk firestarter --needed --noconfirm
+        echo ""
+    ;;
+
+    'j')
+        echo ""
+    ;;
+
+    *)
+        echo ""
+    ;;
+
+esac
+read -p "Premere un tasto per continuare"
+########## 44 ###############
+clear
+echo "INSTALLAZIONE SOFTWARE-------------44
+
+Vuoi installare il tema greybird per xfce?
+Installare solo se si è scelto di installare xfce
+
+INFORMAZIONI AVANZATE
+Verrà installato il pacchetto 'xfce-theme-greybird' da AUR
+
+Premere '1' e invio  per installarlo oppure Premere \"j\" per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt, dare '1a' e invio"
+
+read scelta
+
+case $scelta in
+    '1')
+        yaourt -S xfce-theme-greybird --needed
+        echo ""
+    ;;
+    '1a')
+        yaourt -S  xfce-theme-greybird--needed --noconfirm
+        echo ""
+    ;;
+
+    'j')
+        echo ""
+    ;;
+
+    *)
+        echo ""
+    ;;
+
+esac
+read -p "Premere un tasto per continuare"
+
+
+
+########## 45 ###############
+clear
+echo "INSTALLAZIONE SOFTWARE-------------45
+
+Vuoi installare i puntatori per il mouse dmz-vanilla per xfce?
+Installare solo se si è scelto di installare xfce
+
+INFORMAZIONI AVANZATE
+sarànno installati i pacchetti: 'xcursor-vanilla-dmz-aa xcursor-vanilla-dmz' da AUR
+
+Premere '1' e invio  per installarli oppure Premere \"j\" per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt, dare '1a' e invio"
+
+read scelta
+
+case $scelta in
+    '1')
+        yaourt -S xcursor-vanilla-dmz-aa xcursor-vanilla-dmz --needed
+        echo ""
+    ;;
+    '1a')
+        yaourt -S xcursor-vanilla-dmz-aa xcursor-vanilla-dmz  --noconfirm --needed
+        echo ""
+    ;;
+
+    'j')
+        echo ""
+    ;;
+
+    *)
+        echo ""
+    ;;
+
+esac
+read -p "Premere un tasto per continuare"
+
+
+
+########## 46 ###############
+clear
+echo "INSTALLAZIONE SOFTWARE-------------46
+
+Vuoi installare le icone faenza cupertino per XFCE o KDE?
+Per gli altri DE,potrai installare le icone 'faenza' una volta uscito da questo script.
+
+1)Installare icone faenza per XFCE
+
+2)Installare icone faenza per KDE
+
+Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
+per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt, aggiungere 'a' alla scelta (es. '1a')  "
+read scelta
+
+case $scelta in
+    '1')
+        yaourt -S faenza-icon-theme faenza-xfce-addon --needed
+        echo ""
+    ;;
+    '2')
+        yaourt -S kfaenza-icon-theme --needed
+        echo ""
+    ;;
+    '1a')
+        yaourt -S faenza-icon-theme faenza-xfce-addon --needed--noconfirm
+        echo ""
+    ;;
+    '2a')
+        yaourt -S kfaenza-icon-theme --needed --noconfirm
+        echo ""
+    ;;
+    'j')
+        echo ""
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+read -p "Premere un tasto per continuare"
+
+########## 47 ###############
+clear
+echo "INSTALLAZIONE SOFTWARE-------------47
+
+Vuoi installare il plugin \"qtcurve\" per KDE?
+Questo plugin permette una personalizzazione ancora più completa di KDE.
+Installare solo se si è scelto di installare KDE
+
+INFORMAZIONI AVANZATE
+Verrà installato il pacchetto 'qtcurve-kde4'
+
+Premere un tasto per installarlo oppure Premere \"j\" per saltare questo passaggio."
+
+read -n1 a
+a=`echo $a | tr '[A-Z]' '[a-z]'`
+if [ "$a" != "j" ]; then
+    echo ""
+    pacman -S qtcurve-kde4  --needed
+
+read -p "Premere un tasto per continuare"
+fi
+
+########## 48 ##############
+clear
+echo "INSTALLAZIONE SOFTWARE-------------48
+
+Vuoi installare il plugin \"kde-panels-collection\" per KDE?
+Questo plugin permette di creare su KDE dei pannelli molto simili a quelli di altri DE come gnome 2 o unity.
+Installare solo se si è scelto di installare KDE
+
+INFORMAZIONI AVANZATE
+Verà installato il pacchetto 'kdeplasma-themes-panels-collection' da AUR
+
+Premere '1' e invio  per installarli oppure Premere \"j\" per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt, dare '1a' e invio"
+
+read scelta
+
+case $scelta in
+    '1')
+        yaourt -S kdeplasma-themes-panels-collection  --needed
+        echo ""
+    ;;
+    '1a')
+        yaourt -S kdeplasma-themes-panels-collection   --noconfirm --needed
+        echo ""
+    ;;
+
+    'j')
+        echo ""
+    ;;
+
+    *)
+        echo ""
+    ;;
+
+esac
+read -p "Premere un tasto per continuare"
+
+
+
+########## 49 ###############
+clear
+echo "INSTALLAZIONE WEB BROWSER-------------49
+
+Un web browser consente la navigazione nel web.
+
+ 1)Mozilla Firefox è il web browser open source più conosciuto, particolarmente configurabile
+
+ 2)Chromium è il web browser open-source da cui deriva Google Chrome, ritenuto particolarmente veloce; (SCELTA CONSIGLIATA)
+
+ 3)Opera è uno dei dieci web browser più utilizzati al mondo.Estremamente versatile,potente e comodo,è ritenuto uno dei migliori browser al mondo.È,però,proprietario;
+
+ 4) Midori è un browser minimale basato su WebKitGtk;
+
+ 5)Qupzilla è un browser per KDE;
+
+ 6)Rekonq è un altro browser per KDE.
+
+ INFORMAZIONI AVANZATE
+ Verranno installati i seguenti pacchetti
+
+ 1)firefox firefox-i18n-it
+
+ 2)chromium
+
+ 3)opera opera-i18n-it
+
+ 4)midori midori-flash
+
+ 5)qupzilla
+
+ 6)rekonq
+
+ Le scelte 3 e 4 fanno uso di Yaourt
+
+Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
+per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt per le scelte '3' e '4', digitare '3a' o '4a' e Premere invio  "
+read scelta
+
+case $scelta in
+    '1')
+        pacman -S firefox firefox-i18n-it --needed
+        echo ""
+    ;;
+    '2')
+        pacman -S chromium --needed
+        echo ""
+    ;;
+    '3')
+        yaourt -S opera opera-i18n-it --needed
+        echo ""
+    ;;
+    '3a')
+        yaourt -S opera opera-i18n-it  --needed --noconfirm
+        echo ""
+    ;;
+    '4a')
+        yaourt -S midori midori-flash --needed --noconfirm
+        echo ""
+    ;;
+    '5')
+        pacman -S qupzilla --needed
+    ;;
+    '6')
+        pacman -S rekonq --needed
+    ;;
+    'j')
+        echo ""
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+read -p "Premere un tasto per continuare"
+########## 49 ###############
+clear
+echo "INSTALLAZIONE TOR WEB BROWSER-------------49.1
+
+Tor-Browser, un browser “all-in-one” che ci permette di navigare in modo sicuro e anonimo su internet.
+Questo Browser non è altro che una versione modificata di Firefox che però potremo utilizzare solamente
+per navigare attraverso i nodi Tor.
+
+INFORMAZIONI AVANZATE
+Verranno installati i seguenti pacchetti
+
+ 1.tor-browser-it
+ 2.tor-browser-en
+
+ Le scelte 1 (-it) e 2 (-en) fanno uso di Yaourt
+
+Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
+per saltare questo passaggio."
+
+case $scelta in
+    '1')
+        yaourt -S tor-browser-it  --needed --noconfirm
+        echo ""
+    ;;
+    '2')
+        yaourt -S tor-browser-en --needed --noconfirm
+        echo ""
+    ;;
+
+    'j')
+        echo ""
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+read -p "Premere un tasto per continuare"
+
+
+########## 50 ##############
+clear
+echo "INSTALLAZIONE SOFTWARE-------------50
+
+Vuoi installare il gestore dell'ora ntp?
+
+INFORMAZIONI AVANZATE
+Sarà installato il pacchetto 'ntp'.Verranno aggiunte delle stringhe a /etc/ntp.conf.Sarà abilitato l'avvio automatico ad ogni avvio di ntpd
+Premere un tasto per installarlo oppure Premere \"j\" per saltare questo passaggio."
+
+read -n1 a
+a=`echo $a | tr '[A-Z]' '[a-z]'`
+if [ "$a" != "j" ]; then
+    echo ""
+    pacman -S ntp
+echo "
+server 0.it.pool.ntp.org iburst
+server 1.it.pool.ntp.org iburst
+server 2.it.pool.ntp.org iburst
+server 3.it.pool.ntp.org iburst" | tee -a /etc/ntp.conf
+
+systemctl enable ntpd.service
+
+read -p "Premere un tasto per continuare"
+fi
+########## 51 ##############
+clear
+echo "INSTALLAZIONE SOFTWARE-------------51
+
+Occorre avviare automaticamente alcuni demoni
+come syslog-ng e cronie (vecchio crond)
+Vuoi procedere?
+
+INFORMAZIONI AVANZATE
+Verrà installato il pacchetto 'syslog-ng'.sarànno abilitati all'avvio i servizi 'cronie' e 'syslog-ng'
+
+Premere un tasto per continuare oppure Premere \"j\" per saltare questo passaggio."
+
+read -n1 a
+a=`echo $a | tr '[A-Z]' '[a-z]'`
+if [ "$a" != "j" ]; then
+    echo ""
+    pacman -S syslog-ng --needed
+
+    systemctl enable cronie.service
+
+    systemctl enable syslog-ng.service
+
+read -p "Premere un tasto per continuare"
+
+fi
+
+################### 52 ################
+clear
+echo "INSTALLAZIONE SOFTWARE ---------------52
+Vuoi installare networkmanager? è un tool che permette di collegarsi a internet.
+Verrà installato anche un tool per permetterti di usare network manager in via grafica.
+
+1)Voglio solo network manager senza altri tool
+2)Voglio network manager per KDE
+3)Voglio network manager per Xfce
+4)Voglio network manager per openbox
+5)Voglio network manager per GNOME e gli altri
+
+INFORMAZIONI AVANZATE:
+Sarà installato il pacchetto 'networkmanager'.
+Tale tool sarà anche abilitato per l'avvio automatico.
+
+In più, saranno installati i tool
+
+2)kdeplasma-applets-networkmanagement
+3)network-manager-applet , xfce4-notifyd
+4)network-manager-applet , xfce4-notifyd  gnome-icon-theme
+5)network-manager-applet , gnome-icon-theme
+
+Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
+per saltare questo passaggio."
+read scelta
+
+case $scelta in
+    '1')
+        pacman -S networkmanager --needed
+
+        systemctl enable NetworkManager.service
+        echo ""
+    ;;
+    '2')
+       pacman -S networkmanager kdeplasma-applets-networkmanagement --needed
+
+        systemctl enable NetworkManager.service
+        echo ""
+    ;;
+    '3')  pacman -S networkmanager  network-manager-applet xfce4-notifyd--needed
+
+        systemctl enable NetworkManager.service
+
+        echo ""
+    ;;
+    '4')
+         pacman -S networkmanager xfce4-notifyd gnome-icon-theme network-manager-applet --needed
+
+        systemctl enable NetworkManager.service
+        echo ""
+    ;;
+    '5')
+         pacman -S networkmanager gnome-icon-theme network-manager-applet  --needed
+
+        systemctl enable NetworkManager.service
+        echo ""
+    ;;
+
+    'j')
+        echo ""
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+read -p "Premere un tasto per continuare"
+######## 53 ########################
+clear
+echo "INSTALLAZIONE SOFTWARE-----------------53
+
+Vuoi installare wine?Si tratta di un tool che permette di eseguire diverse applicazioni per Microsoft Windows su GNU/Linux.
+Puoi scegliere tra:
+
+1)Installazione base di wine             (wine)
+2)Installazione completa di wine         (wine wine_gecko  winetricks playonlinux)
+3)Installazione completa di wine per KDE (wine wine_gecko  winetricks playonlinux q4wine).Comprende l'utilissimo tool in qt \"q4wine\"
+
+Potrebbe essere necessario configurare succesivamente wine.
+
+Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
+per saltare questo passaggio  "
+
+read scelta
+
+case $scelta in
+    '1')
+       pacman -S wine --needed
+        echo ""
+    ;;
+    '2')
+        pacman -S wine wine_gecko  winetricks playonlinux --needed
+        echo ""
+    ;;
+    '3')
+        pacman -S wine wine_gecko q4wine winetricks playonlinux --needed
+        echo ""
+    ;;
+    'j')
+        echo ""
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+read -p "Premere un tasto per continuare"
+
+######## 55 ########################
+clear
+echo "INSTALLAZIONE SOFTWARE-----------------54
+
+Vuoi installare Skype? Si tratta di un tool proprietario che permette di effettuare chiamate e videochiamate gratuite verso altri pc con skype e chiamate a pagamento verso cellulari.
+Skype-call-recorder è un tool che permette di registrare le conversazioni effettuate con Skype.È in qt,quindi consigliato per KDE.
+Puoi scegliere tra:
+
+1)Installazione di Skype                          (skype)
+2)Installazione di Skype e Skype-call-recorder    (skype skype-call-recorder)
+
+
+Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
+per saltare questo passaggio  "
+
+read scelta
+
+case $scelta in
+    '1')
+       pacman -S skype --needed
+        echo ""
+    ;;
+    '2')
+        pacman -S skype skype-call-recorder --needed
+        echo ""
+    ;;
+    'j')
+        echo ""
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+read -p "Premere un tasto per continuare"
+
+######## 56 ########################
+clear
+echo "INSTALLAZIONE SOFTWARE-----------------55
+
+Vuoi installare alsa-utils? Si tratta di un pacchetto aggiuntivo per alsa che permette di regolare il volume.Contiene il noto tool 'alsamixer'.
+Questo passaggio è consigliato.
+
+INFORMAZIONI AVANZATE
+Verrà installato il pacchetto 'alsa-utils'
+Premere invio per continuare oppure \"j\" per saltare il passaggio."
+
+read -n1 a
+a=`echo $a | tr '[A-Z]' '[a-z]'`
+if [ "$a" != "j" ]; then
+
+pacman -S alsa-utils --needed
+
+read -p "Premere invio per continuare"
+fi
+
+######## 57 ########################
+clear
+echo " INSTALLAZIONE SOFTWARE-----------------57
+
+Vuoi installare \"downgrade\"? Si tratta di un pacchetto che permette di effettuare il downgrade di un pacchetto nel caso in cui la nuova versione non funzionasse.
+Può effettura il downgrade sia nella cache che su ARM, una sorta di cache online che permette di installare i pacchetti che aveva Arch in una data scelta.
+Si tratta di un tool a riga di comando, eseguibile quindi su qualsiasi DE o WM
+
+INFORMAZIONI AVANZATE
+Verrà installato il pacchetto 'downgrade', proveniente da AUR
+
+Digitare '1' e invio per installarlo oppure Premere \"j\" per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt, dare '1a' e invio"
+read scelta
+case $scelta in
+    '1')
+        yaourt -S downgrade  --needed
+        echo ""
+    ;;
+    '1a')
+        yaourt -S downgrade   --noconfirm --needed
+        echo ""
+    ;;
+    'j')
+        echo ""
+    ;;
+    *)
+        echo ""
+    ;;
+esac
+read -p "Premere un tasto per continuare"
+
+########END########################
+clear
+read -p "[*] Per terminare l'installazione è necessario riavviare.
+special thanks: www.xfce-italia.it e alexiobash.
+Premere un tasto per uscire"
+exit
