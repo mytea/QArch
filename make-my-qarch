@@ -33,11 +33,13 @@ echo"Scegliere su che ambiente andremo ad operare:
 read scelta
 case $scelta in
   '1') echo""
+  ;;
   '2')echo"è stato scelto di installare BlackArch, premere invio per continuare"
         # Run https://blackarch.org/strap.sh as root and follow the instructions:
         curl -O http://blackarch.org/strap.sh && sha1sum strap.sh
         # SHA1 sum should match: f8456229463718c097cf70ed06a806f981be7423
         sudo ./strap.sh
+  ;;
 esac
 ##### 1 #######
 clear
@@ -2071,7 +2073,9 @@ Vuoi installare wine?Si tratta di un tool che permette di eseguire diverse appli
 Puoi scegliere tra:
 
 1)Installazione base di wine             (wine)
+
 2)Installazione completa di wine         (wine wine_gecko  winetricks playonlinux)
+
 3)Installazione completa di wine per KDE (wine wine_gecko  winetricks playonlinux q4wine).Comprende l'utilissimo tool in qt \"q4wine\"
 
 Potrebbe essere necessario configurare succesivamente wine.
@@ -2112,6 +2116,7 @@ Skype-call-recorder è un tool che permette di registrare le conversazioni effet
 Puoi scegliere tra:
 
 1)Installazione di Skype                          (skype)
+
 2)Installazione di Skype e Skype-call-recorder    (skype skype-call-recorder)
 
 
