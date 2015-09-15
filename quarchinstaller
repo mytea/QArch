@@ -1,15 +1,737 @@
 #!/bin/bash
-## Qarch-testpreview
-### Basato su Arch-Mind 2
+### vitamins/archinstaller + archmind script 2.1
+###preview version
+
+declare -r VERSION='0.test-preview'
+
+# colors
+unset ALL_OFF GREEN RED
+ALL_OFF='\e[1;0m'
+GREEN='\e[1;32m'
+RED='\e[1;31m'
+readonly ALL_OFF GREEN RED
+
+# functions
+# {{{
+config_fail() {
+printf "$RED"
+printf '%s\n' "| Error in variable ${1}."
+printf "$ALL_OFF"
+exit 1
+}
+
+fail() {
+printf "$RED"
+printf '%s\n' "| Error, ${1}."
+printf "$ALL_OFF"
+exit 1
+}
+
+# wait 2 seconds for the user to read the message, if confirm is set to yes
+message() {
+printf "${RED}\n"
+printf '%s\n' '| archinstaller:'
+printf '%s\n' "| ${1}"
+printf "${ALL_OFF}\n"
+[[ "$confirm" = 'yes' ]] && sleep 2
+return 0
+}
+
+check_conf() {
+printf "$RED"
+printf '%s\n' '| Checking configuration..'
+printf "$ALL_OFF"
+# confirm
+[[ "$confirm" = 'yes' || "$confirm" = 'no' ]] || config_fail 'confirm'
+# edit_conf
+if [[ "$edit_conf" = 'yes' ]]; then
+	type "$EDITOR" > /dev/null || config_fail 'EDITOR'
+else
+	[[ "$edit_conf" = 'no' ]] || config_fail 'edit_conf'
+fi
+# unmount
+[[ "$unmount" = 'yes' || "$unmount" = 'no' ]] || config_fail 'unmount'
+# manual_part
+if [[ "$manual_part" = 'yes' ]]; then
+	mountpoint -q /mnt || fail 'no mounted filesystem found at target /mnt'
+	[[ -z "$cmdline" ]] && config_fail 'cmdline'
+	if [[ "$bootloader" = 'grub' && "$uefi" = 'no' ]]; then
+		# dest_disk
+		[[ -z "$dest_disk" ]] && config_fail 'dest_disk'
+		## check if dest_disk is really a disk
+		[[ $(lsblk -dno TYPE "$dest_disk") = 'disk' ]] || config_fail 'dest_disk'
+	fi
+else
+	[[ "$manual_part" = 'no' ]] || config_fail 'manual_part'
+	# dest_disk
+	[[ -z "$dest_disk" ]] && config_fail 'dest_disk'
+	## check if dest_disk is really a disk
+	[[ $(lsblk -dno TYPE "$dest_disk") = 'disk' ]] || config_fail 'dest_disk'
+	# check /mnt for availability
+	mountpoint -q /mnt && fail 'working directory /mnt is blocked by mounted filesystem'
+	# check dest_disk for mounted filesystems
+	mount | grep "$dest_disk" > /dev/null &&
+	 fail 'found mounted filesystem on destination disk'
+	# swap
+	if [[ "$swap" = 'yes' ]]; then
+		## swap_size
+		[[ -z "$swap_size" ]] && config_fail 'swap_size'
+		[[ "$swap_size" =~ ^[0-9]+[K,M,G,T]$ ]] || config_fail 'swap_size'
+	else
+		[[ "$swap" = 'no' ]] || config_fail 'swap'
+	fi
+	# root_size
+	if [[ "$root_size" = '0' ]]; then
+		[[ "$home" = 'no' ]] || config_fail 'home'
+	else
+		[[ -z "$root_size" ]] && config_fail 'root_size'
+		[[ "$root_size" =~ ^[0-9]+[K,M,G,T]$ ]] || config_fail 'root_size'
+	fi
+	# home
+	if [[ "$home" = 'yes' ]]; then
+		## home_size
+		if [[ "$home_size" != '0' ]]; then
+			[[ -z "$home_size" ]] && config_fail 'home_size'
+			[[ "$home_size" =~ ^[0-9]+[K,M,G,T]$ ]] || config_fail 'home_size'
+		fi
+		## encrypt_home
+		if [[ "$encrypt_home" = 'yes' ]]; then
+			[[ -z "$cryptsetup_options" ]] && config_fail 'cryptsetup_options'
+		else
+			[[ "$encrypt_home" = 'no' ]] || config_fail 'encrypt_home'
+		fi
+	else
+		[[ "$home" = 'no' ]] || config_fail 'home'
+	fi
+	# fstype
+	## check if mkfs utilities are installed
+	## set options for overwriting existing filesystems
+	case "$fstype" in
+		btrfs)	type mkfs.btrfs > /dev/null || fail 'missing package: btrfs-progs'
+			packages+=( 'btrfs-progs' )
+			mkfs_options="$fstype";;
+		ext2|ext3|ext4)
+			type mkfs.ext4 > /dev/null || fail 'missing package: e2fsprogs'
+			mkfs_options="${fstype} -q";;
+		f2fs)	type mkfs.f2fs > /dev/null || fail 'missing package: f2fs-tools'
+			packages+=( 'f2fs-tools' )
+			mkfs_options="$fstype";;
+		jfs)	type mkfs.jfs > /dev/null || fail 'missing package: jfsutils'
+			mkfs_options="${fstype} -q";;
+		nilfs2)	type mkfs.nilfs2 > /dev/null || fail 'missing package: nilfs-utils'
+			packages+=( 'nilfs-utils' )
+			mkfs_options="${fstype} -f -q";;
+		reiserfs)
+			type mkfs.reiserfs > /dev/null || fail 'missing package: reiserfsprogs'
+			mkfs_options="${fstype} -q";;
+		xfs)	type mkfs.xfs > /dev/null || fail 'missing package: xfsprogs'
+			mkfs_options="${fstype} -f -q";;
+		*)	config_fail 'fstype';;
+	esac
+fi
+# uefi
+if [[ "$uefi" = 'yes' ]]; then
+	## check if install host is booted in uefi mode
+	if [[ -z "$(mount -t efivarfs)" ]]; then
+		mount -t efivarfs efivarfs /sys/firmware/efi/efivars > /dev/null ||
+		 config_fail 'uefi'
+	fi
+	efivar -l > /dev/null || config_fail 'uefi'
+	## bootloader
+	[[ "$bootloader" = 'grub' || "$bootloader" = 'gummiboot' ]] || config_fail 'bootloader'
+	if [[ "$manual_part" = 'no' ]]; then
+		type mkfs.vfat > /dev/null || fail 'missing package: dosfstools'
+	fi
+	[[ -z "$esp_size" ]] && config_fail 'esp_size'
+	[[ "$esp_size" =~ ^[0-9]+[K,M,G,T]$ ]] || config_fail 'esp_size'
+else
+	[[ "$uefi" = 'no' ]] || config_fail 'uefi'
+	## bootloader
+	[[ "$bootloader" = 'syslinux' || "$bootloader" = 'grub' ]] || config_fail 'bootloader'
+	# boot_size
+	[[ -z "$boot_size" ]] && config_fail 'boot_size'
+	[[ "$boot_size" =~ ^[0-9]+[K,M,G,T]$ ]] || config_fail 'boot_size'
+fi
+# mirror
+## online status is checked after internet connection was tested successfully
+[[ -z "$mirror" ]] && config_fail 'mirror'
+[[ "$mirror" =~ /$ ]] || config_fail 'mirror'
+# locale
+[[ -z "$locale" ]] && config_fail 'locale'
+## enforce UTF-8
+[[ "$locale" =~ ^[a-z]{2,3}_[A-Z]{2}(.UTF-8)?\ UTF-8$ ]] || config_fail 'locale'
+# keymap
+[[ -z "$keymap" ]] && config_fail 'keymap'
+localectl --no-pager list-keymaps | grep -x "$keymap" > /dev/null || config_fail 'keymap'
+# font
+[[ -z "$font" ]] && config_fail 'font'
+# timezone
+[[ -z "$timezone" ]] && config_fail 'timezone'
+timedatectl --no-pager list-timezones | grep -x "$timezone" > /dev/null || config_fail 'timezone'
+# hardware_clock
+[[ "$hardware_clock" = 'utc' || "$hardware_clock" = 'localtime' ]] || config_fail 'hardware_clock'
+# hostname
+[[ -z "$hostname" ]] && config_fail 'hostname'
+[[ "$hostname" =~ ^[a-z0-9][a-z0-9-]*[a-z0-9]$ ]] || config_fail 'hostname'
+# network
+case "$network" in
+	no|dhcpcd|ifplugd)	;;
+	netctl)	[[ -z "$netctl_profile" ]] && config_fail 'netctl_profile'
+		[[ -s ./"$netctl_profile" ]] || config_fail 'netctl_profile';;
+	*)	config_fail 'network';;
+esac
+# hooks
+[[ -z "$hooks" ]] && configure_hooks='no' || configure_hooks='yes'
+# set_password
+if [[ "$set_password" = 'yes' ]]; then
+	## root password
+	[[ -z "$root_password" ]] && ask_root_password='yes' || ask_root_password='no'
+else
+	[[ "$set_password" = 'no' ]] || config_fail 'set_password'
+fi
+# add_user
+if [[ "$add_user" = 'yes' ]]; then
+	## username
+	[[ -z "$username" ]] && config_fail 'username'
+	[[ "$username" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]] || config_fail 'username'
+	## user password
+	if [[ "$set_password" = 'yes' ]]; then
+		[[ -z "$user_password" ]] && ask_user_password='yes' || ask_user_password='no'
+	fi
+else
+	[[ "$add_user" = 'no' ]] || config_fail 'add_user'
+fi
+
+# no config_fail beyond this point
+printf "$GREEN"
+printf '%s\n' '| OK.'
+printf "$ALL_OFF"
+}
+
+ask_confirm() {
+printf "$RED"
+printf '%s\n' '---------------------------------------'
+if [[ "$manual_part" = 'no' ]]; then
+	printf '%s\n' 'The following drive will be formatted.'
+	lsblk -o NAME,TYPE,MODEL,SIZE,FSTYPE "$dest_disk"
+else
+	printf '%s\n' 'The following filesystems are targeted.'
+	findmnt -l -o TARGET,SOURCE -R /mnt
+fi
+printf '%s\n' '---------------------------------------'
+printf "$ALL_OFF"
+local answer='x'
+while [[ "$answer" != 'Y' ]]; do
+	printf '%s' 'Continue? (Y/n) '
+	read -n 2 -r answer
+	[[ "$answer" = 'n' ]] && fail 'script cancelled'
+	printf '\n'
+done
+}
+
+make_part() {
+# prepare disk
+message 'Preparing disk..'
+sgdisk -Z "$dest_disk"
+dd bs=1K count=1024 iflag=nocache oflag=direct if=/dev/zero of="$dest_disk"
+wipefs -a "$dest_disk"
+blockdev --rereadpt "$dest_disk"; sync; blockdev --rereadpt "$dest_disk"
+
+# partitioning
+message 'Creating partitions..'
+
+## partition layout
+if [[ "$uefi" = 'yes' ]]; then
+	# first partition is ESP
+	if [[ "$swap" = 'yes' ]]; then
+		swap_num=2
+		root_num=3
+		home_num=4
+	else
+		root_num=2
+		home_num=3
+	fi
+else
+	if [[ "$bootloader" = 'grub' ]]; then
+		# first partition is BIOS boot
+		if [[ "$swap" = 'yes' ]]; then
+			boot_num=2
+			swap_num=3
+			root_num=4
+			home_num=5
+		else
+			boot_num=2
+			root_num=3
+			home_num=4
+		fi
+	else
+		if [[ "$swap" = 'yes' ]]; then
+			boot_num=1
+			swap_num=2
+			root_num=3
+			home_num=4
+		else
+			boot_num=1
+			root_num=2
+			home_num=3
+		fi
+	fi
+fi
+
+## EFI system partition
+if [[ "$uefi" = 'yes' ]]; then
+	sgdisk -n 1:0:+"$esp_size" -t 1:EF00 "$dest_disk"
+	sleep 1
+else
+	## BIOS boot partition
+	if [[ "$bootloader" = 'grub' ]]; then
+		sgdisk -n 1:0:+1007K -t 1:EF02 "$dest_disk"
+		sleep 1
+	fi
+	## boot partition
+	sgdisk -n "$boot_num":0:+"$boot_size" -t "$boot_num":8300 "$dest_disk"
+	sleep 1
+fi
+
+## swap partition
+if [[ "$swap" = 'yes' ]]; then
+	sgdisk -n "$swap_num":0:+"$swap_size" -t "$swap_num":8200 "$dest_disk"
+	sleep 1
+fi
+
+## root partition
+sgdisk -n "$root_num":0:+"$root_size" -t "$root_num":8300 "$dest_disk"
+sleep 1
+
+## home partition
+if [[ "$home" = 'yes' ]]; then
+	sgdisk -n "$home_num":0:+"$home_size" -t "$home_num":8300 "$dest_disk"
+fi
+
+# create and mount filesystems
+## root
+message 'Formatting root..'
+mkfs.${mkfs_options} "$dest_disk""$root_num"
+message 'Mounting root..'
+mount -t "$fstype" "$dest_disk""$root_num" /mnt
+
+## ESP
+if [[ "$uefi" = 'yes' ]]; then
+	message 'Formatting ESP..'
+	mkfs.vfat -F32 "$dest_disk"1
+	mkdir -p /mnt/boot
+	message 'Mounting ESP..'
+	mount -o nodev,nosuid,noexec -t vfat "$dest_disk"1 /mnt/boot
+else
+	message 'Formatting /boot..'
+	mkfs.ext2 -q "$dest_disk""$boot_num"
+	mkdir -p /mnt/boot
+	message 'Mounting /boot..'
+	mount -o nodev,nosuid,noexec -t ext2 "$dest_disk""$boot_num" /mnt/boot
+fi
+
+## swap
+if [[ "$swap" = 'yes' ]]; then
+	message 'Formatting swap..'
+	mkswap "$dest_disk""$swap_num"
+	swapon "$dest_disk""$swap_num"
+fi
+
+## home
+if [[ "$home" = 'yes' ]]; then
+	if [[ "$encrypt_home" = 'yes' ]]; then
+		## encrypt home
+		modprobe dm_mod
+		## overwrite partition with zeroes
+		message 'Setting up Encryption. Secure erasure of partition..'
+		dd bs=4M iflag=nocache oflag=direct if=/dev/zero of="$dest_disk""$home_num" || sync
+		## map physical partition to LUKS
+		message 'Please enter a new encryption passphrase.'
+		cryptsetup ${cryptsetup_options} luksFormat "$dest_disk""$home_num"
+		## open encrypted volume
+		message 'To unlock the container, enter the passphrase again.'
+		cryptsetup open --type luks "$dest_disk""$home_num" home
+		message 'Formatting /home..'
+		mkfs.${mkfs_options} /dev/mapper/home
+		mkdir /mnt/home
+		message 'Mounting /home..'
+		mount -o nodev,nosuid -t "$fstype" /dev/mapper/home /mnt/home
+	else
+		message 'Formatting /home..'
+		mkfs.${mkfs_options} "$dest_disk""$home_num"
+		mkdir /mnt/home
+		message 'Mounting /home..'
+		mount -o nodev,nosuid -t "$fstype" "$dest_disk""$home_num" /mnt/home
+	fi
+fi
+}
+
+pacman_install() {
+pacman --noconfirm --needed -r /mnt --cachedir=/mnt/var/cache/pacman/pkg -S $@
+}
+
+install_xorg() {
+message 'Installing xorg packages..'
+pacman_install xorg-server xorg-server-utils xorg-xinit
+
+configure_system() {
+message 'Configuring system..'
+
+if [[ "$manual_part" = 'yes' ]]; then
+	# crypttab
+	# check if there are any encrypted containers opened before editing crypttab
+	if [[ "$edit_conf" = 'yes' && -n "$(dmsetup ls --target crypt)" ]]; then
+		"$EDITOR" /mnt/etc/crypttab
+		clear
+	fi
+	# mdadm.conf
+	if [[ -e /proc/mdstat ]] && grep '^md' /proc/mdstat > /dev/null; then
+		mdadm -Ds >> /mnt/etc/mdadm.conf
+		if [[ "$edit_conf" = 'yes' ]]; then
+			"$EDITOR" /mnt/etc/mdadm.conf
+			clear
+		fi
+	fi
+else
+	# crypttab
+	if [[ "$home" = 'yes' && "$encrypt_home" = 'yes' ]]; then
+		local home_uuid=$(lsblk -dno UUID "$dest_disk""$home_num")
+		printf '%s\n' "home UUID=${home_uuid} none luks,timeout=60s" >> /mnt/etc/crypttab
+		if [[ "$edit_conf" = 'yes' ]]; then
+			"$EDITOR" /mnt/etc/crypttab
+			clear
+		fi
+	fi
+fi
+
+# fstab
+genfstab -U -p /mnt > /mnt/etc/fstab
+if [[ "$edit_conf" = 'yes' ]]; then
+	"$EDITOR" /mnt/etc/fstab
+	clear
+fi
+# locale
+[[ "$locale" = 'en_US.UTF-8 UTF-8' ]] || printf '%s\n' 'en_US.UTF-8 UTF-8' >> /mnt/etc/locale.gen
+printf '%s\n' "$locale" >> /mnt/etc/locale.gen
+printf '%s\n' "LANG=${locale%% *}" > /mnt/etc/locale.conf
+arch-chroot /mnt locale-gen
+
+# console font and keymap
+cat << EOF > /mnt/etc/vconsole.conf
+KEYMAP=${keymap}
+FONT=${font}
+EOF
+
+# timezone
+ln -s /usr/share/zoneinfo/"$timezone" /mnt/etc/localtime
+
+# hardware clock
+hwclock --adjfile=/mnt/etc/adjtime -w --"$hardware_clock"
+
+# kernel modules
+if [[ "$configure_modules" = 'yes' ]]; then
+	for m in ${k_modules[@]}; do
+		printf '%s\n' "$m" >> /mnt/etc/modules-load.d/modules.conf
+	done
+fi
+
+# hostname
+printf '%s\n' "$hostname" > /mnt/etc/hostname
+sed -i '/^127.0.0.1/ s/$/\t'"$hostname"'/' /mnt/etc/hosts
+
+# network service
+if [[ "$network" != 'no' ]]; then
+	## fix wired network interface name to eth0
+	touch /mnt/etc/udev/rules.d/80-net-setup-link.rules
+	case "$network" in
+		dhcpcd)	systemctl -q --root=/mnt enable dhcpcd@eth0.service;;
+		ifplugd)
+			pacman_install ifplugd
+			systemctl -q --root=/mnt enable netctl-ifplugd@eth0.service;;
+		netctl)	cp ./"$netctl_profile" /mnt/etc/netctl
+			arch-chroot /mnt netctl enable "$netctl_profile";;
+	esac
+fi
+
+#  mkinitcpio
+if [[ "$configure_hooks" = 'yes' || "$edit_conf" = 'yes' ]]; then
+	cp /mnt/etc/mkinitcpio.conf /tmp/mkinitcpio.conf
+	if [[ "$configure_hooks" = 'yes' ]]; then
+		sed -i '/^HOOKS="/ c \HOOKS="'"$hooks"'"' /mnt/etc/mkinitcpio.conf
+	fi
+	if [[ "$edit_conf" = 'yes' ]]; then
+		"$EDITOR" /mnt/etc/mkinitcpio.conf
+		clear
+	fi
+	## only regenerate if modified
+	cmp -s /mnt/etc/mkinitcpio.conf /tmp/mkinitcpio.conf || arch-chroot /mnt mkinitcpio -p linux
+	rm -f /tmp/mkinitpcio.conf
+fi
+
+# root password
+if [[ "$set_password" = 'yes' ]]; then
+	if [[ "$ask_root_password" = 'yes' ]]; then
+		message 'Setting password for root user..'
+		## loop if entered passwords do not match
+		while :; do
+			if passwd -R /mnt root; then
+				break
+			else
+				(( "$?" == 10 )) || break
+			fi
+		done
+	else
+		printf '%s\n' "root:${root_password}" | chpasswd -R /mnt
+	fi
+fi
+
+# add user
+if [[ "$add_user" = 'yes' ]]; then
+	useradd -R /mnt -m -g users -s /bin/bash "$username"
+	## set user password
+	if [[ "$set_password" = 'yes' ]]; then
+		if [[ "$ask_user_password" = 'yes' ]]; then
+			message "Setting password for ${username}.."
+			while :; do
+				if passwd -R /mnt "$username"; then
+					break
+				else
+					(( "$?" == 10 )) || break
+				fi
+			done
+		else
+			printf '%s\n' "${username}:${user_password}" | chpasswd -R /mnt
+		fi
+	fi
+fi
+}
+
+install_bootloader() {
+message 'Installing bootloader..'
+if [[ "$uefi" = 'yes' ]]; then
+	# UEFI
+	if [[ "$bootloader" = 'grub' ]]; then
+		## install grub package
+		pacman_install dosfstools efibootmgr grub
+
+		## configure grub
+		if [[ "$manual_part" = 'yes' ]]; then
+			sed -i '/^GRUB_CMDLINE_LINUX_DEFAULT="/ s/quiet/'"$cmdline"'/' \
+/mnt/etc/default/grub
+		fi
+		if [[ "$edit_conf" = 'yes' ]]; then
+			"$EDITOR" /mnt/etc/default/grub
+			clear
+		fi
+
+		## run grub-mkconfig and grub-install
+		printf '%s\n' 'grub-mkconfig -o /boot/grub/grub.cfg; grub-install \
+--target=x86_64-efi --efi-directory=/boot --bootloader-id=arch_grub --recheck' | arch-chroot /mnt
+	else
+		## install gummiboot package
+		pacman_install gummiboot
+		## run gummiboot install
+		arch-chroot /mnt gummiboot install
+
+		## configure gummiboot
+		cat << EOF > /mnt/boot/loader/loader.conf
+default arch
+timeout 5
+EOF
+		if [[ "$manual_part" = 'no' ]]; then
+			local root_partuuid=$(lsblk -dno PARTUUID "$dest_disk""$root_num")
+			local cmdline="root=PARTUUID=${root_partuuid} rw"
+		fi
+		cat << EOF > /mnt/boot/loader/entries/arch.conf
+title	Arch Linux
+linux	/vmlinuz-linux
+initrd	/initramfs-linux.img
+options	${cmdline}
+EOF
+		if [[ "$edit_conf" = 'yes' ]]; then
+			"$EDITOR" /mnt/boot/loader/entries/arch.conf
+			clear
+		fi
+	fi
+else
+	# BIOS
+	if [[ "$bootloader" = 'syslinux' ]]; then
+		## install syslinux package
+		pacman_install gptfdisk syslinux
+
+		## run syslinux-install_update
+		arch-chroot /mnt syslinux-install_update -i -a -m
+
+		## configure syslinux
+		if [[ "$manual_part" = 'no' ]]; then
+			local root_partuuid=$(lsblk -dno PARTUUID "$dest_disk""$root_num")
+			local cmdline="root=PARTUUID=${root_partuuid} rw"
+		fi
+		cat << EOF > /mnt/boot/syslinux/syslinux.cfg
+PROMPT 1
+TIMEOUT 50
+DEFAULT arch
+
+LABEL arch
+	LINUX ../vmlinuz-linux
+	APPEND ${cmdline}
+	INITRD ../initramfs-linux.img
+
+LABEL archfallback
+	LINUX ../vmlinuz-linux
+	APPEND ${cmdline}
+	INITRD ../initramfs-linux-fallback.img
+EOF
+		if [[ "$edit_conf" = 'yes' ]]; then
+			"$EDITOR" /mnt/boot/syslinux/syslinux.cfg
+			clear
+		fi
+	else
+		## install grub package
+		pacman_install grub
+
+		## configure grub
+		if [[ "$manual_part" = 'yes' ]]; then
+			sed -i '/^GRUB_CMDLINE_LINUX_DEFAULT="/ s/quiet/'"$cmdline"'/' \
+/mnt/etc/default/grub
+		fi
+		if [[ "$edit_conf" = 'yes' ]]; then
+			"$EDITOR" /mnt/etc/default/grub
+			clear
+		fi
+
+		## run grub-mkconfig and grub-install
+		printf '%s\n' "grub-mkconfig -o /boot/grub/grub.cfg; grub-install \
+--target=i386-pc --recheck ${dest_disk}" | arch-chroot /mnt
+	fi
+fi
+}
+# }}}
+
+# parse commandline
+# {{{
+if (( "$#" > 0 )); then
+	(( "$#" > 1 )) && fail 'too many arguments'
+	if [[ "$1" = '-v' || "$1" = '--version' ]]; then
+		cat << EOF
+archinstaller ${VERSION}
+Copyright (C) 2014 Dennis Anfossi, Lukas B.
+License GPLv2
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+Written by Dennis Anfossi & Lukas B.
+EOF
+		exit 0
+	elif [[ "$1" = '-h' || "$1" = '--help' ]]; then
+		cat << EOF
+Run without arguments to start the installer.
+  -h  --help        display this help and exit
+  -v  --version     output version information and exit
+For the complete documentation see README.
+EOF
+		exit 0
+	else
+		fail "invalid option ${1}"
+	fi
+fi
+# }}}
+
+# test requirements
+# {{{
+# check root user id
+[[ "$EUID" = '0' ]] || fail 'please run as root user'
+
+# check arch linux
+[[ -e /etc/arch-release ]] || fail 'please run on arch linux'
+
+# arch-install-scripts required
+type pacstrap > /dev/null || fail 'missing package: arch-install-scripts'
+# gdisk required
+type gdisk > /dev/null || fail 'missing package: gptfdisk'
+# }}}
+
+# set defaults
+# {{{
+confirm='yes'
+edit_conf='yes'
+unmount='yes'
+manual_part='no'
+esp_size='512M'
+boot_size='128M'
+cryptsetup_options='-qy -c aes-xts-plain64 -h sha1 -s 256'
+
+# EDITOR defaults to nano if environment variable EDITOR is unset
+[[ -z "$EDITOR" ]] && EDITOR='nano'
+# }}}
+
+# check if configuration file is in the current working directory
+[[ -s ./ari.conf ]] || fail "configuration file ari.conf not found in $(pwd)"
+
+printf "$RED"
+cat << EOF
+---------------------------------------
+          archinstaller ${VERSION}
+---------------------------------------
+EOF
+printf "$ALL_OFF"
+
+# source configuration file
+source ./ari.conf
+
+# check configuration
+check_conf
+
+# load package list from file pkglist.txt
+[[ -s ./pkglist.txt ]] && packages+=( $( < ./pkglist.txt ) )
+
+# avoid errors due to "set -u" and unset variable
+## packages
+[[ -z "$packages" ]] && install_packages='no' || install_packages='yes'
+## kernel modules
+[[ -z "$k_modules" ]] && configure_modules='no' || configure_modules='yes'
+
+# check internet connection
+printf "$RED"
+printf '%s\n' '| Checking internet connection..'
+curl -f --retry 3 -m 10 -o /dev/null -s http://mirrors.kernel.org ||
+ fail 'please check the internet connection'
+printf "$GREEN"
+printf '%s\n' '| OK.'
+printf "$ALL_OFF"
+
+# check mirror status
+if [[ "$mirror" != 'keep' ]]; then
+	curl -f --retry 3 -m 10 -o /dev/null -s "$mirror"lastsync ||
+ fail 'please check the mirror status and configuration'
+fi
+
+# paranoid shell
+set -e -u
+
+# ask for confirmation
+[[ "$confirm" = 'yes' ]] && ask_confirm
+# create partitions & filesystems, mount filesystems
+[[ "$manual_part" = 'no' ]] && make_part
+
+# mirror
+if [[ "$mirror" != 'keep' ]]; then
+	mirror='Server = '"$mirror"'$repo/os/$arch'
+	printf '%s\n' "$mirror" > /etc/pacman.d/mirrorlist
+fi
+
+# pacstrap base packages
+message 'Installing base system..'
+pacstrap /mnt base
+
+# install xorg packages
+[[ "$xorg" = 'yes' ]] && install_xorg
+
+######noob experience
+#!/bin/bash
+##
 ####
 clear
-echo "BENVENUTO-----------------------------
-
-QArch, installa Arch Linux rispondendo a delle domande.
-
-IMPORTANTE: Assicurarsi di essere root.
-
-Ti verranno fatte alcune domande per personalizzare il sistema.
+echo "Starting. . .
 
 Premere un tasto per continuare oppure \"e\" per uscire"
 read -n1 a
@@ -22,7 +744,7 @@ fi
 clear
 echo"Scegliere su che ambiente andremo ad operare:
 
-     1.Desktop
+     1.Home Desktop / Workstation
      2.Pentesting
 
      Scegliendo 1, avrete la possibilità di costruire il vostro ambiente desktop archlinux
@@ -34,408 +756,14 @@ read scelta
 case $scelta in
   '1') echo""
   ;;
-  '2')echo"è stato scelto di installare BlackArch, premere invio per continuare"
-        # Run https://blackarch.org/strap.sh as root and follow the instructions:
-        curl -O http://blackarch.org/strap.sh && sha1sum strap.sh
-        # SHA1 sum should match: f8456229463718c097cf70ed06a806f981be7423
-        sudo ./strap.sh
+  '2') echo " è stato scelto di installare BlackArch, premere invio per continuare"
+        curl -O http://blackarch.org/strap.sh
+        ./strap.sh
+        exit 0
   ;;
 esac
-##### 1 #######
 clear
-echo "Configurare Tastiera e Localilizzazione sistema--------1
-
-1. it
-2. en
-
-Digitare scelta e invio per continuare oppure \"j\" per saltare questo passaggio."
-read lingua
-
-case $lingua in
-    '1')
-    echo "
-KEYMAP=it
-FONT=Lat2-Terminus16
-FONT_MAP=" tee /etc/vconsole.conf #la tastiera viene impostata come "italiana" e il font è indicato
- echo "#
-# Catch-all evdev loader for udev-based systems
-# We don't simply match on any device since that also adds accelerometers
-# and other devices that we don't really want to use. The list below
-# matches everything but joysticks.
-
-Section \"InputClass\"
-        Identifier \"evdev pointer catchall\"
-        MatchIsPointer \"on\"
-        MatchDevicePath \"/dev/input/event*\"
-        Driver \"evdev\"
-EndSection
-
-Section \"InputClass\"
-        Identifier \"evdev keyboard catchall\"
-        MatchIsKeyboard \"on\"
-        MatchDevicePath \"/dev/input/event*\"
-        Driver \"evdev\"
-  Option \"XkbLayout\" \"it\"
-EndSection
-
-Section \"InputClass\"
-        Identifier \"evdev touchpad catchall\"
-        MatchIsTouchpad \"on\"
-        MatchDevicePath \"/dev/input/event*\"
-        Driver \"evdev\"
-EndSection
-
-Section \"InputClass\"
-        Identifier \"evdev tablet catchall\"
-        MatchIsTablet \"on\"
-        MatchDevicePath \"/dev/input/event*\"
-        Driver \"evdev\"
-EndSection
-
-Section \"InputClass\"
-        Identifier \"evdev touchscreen catchall\"
-        MatchIsTouchscreen \"on\"
-        MatchDevicePath \"/dev/input/event*\"
-        Driver \"evdev\"
-EndSection" | tee /etc/X11/xorg.conf.d/10-evdev.conf
-
-echo "
-it_IT.UTF-8 UTF-8
-it_IT ISO-8859-1
-it_IT@euro ISO-8859-15" >> /etc/locale.gen
-
-locale-gen
-
-echo "LANG=it_IT.UTF-8" >> /etc/locale.conf
-
-export LANG=it_IT.UTF-8
-;;
-
-    '2')
-
-    echo "
-KEYMAP=en
-FONT=
-FONT_MAP=" tee /etc/vconsole.conf #la tastiera viene impostata come "italiana" e il font è indicato
-
- echo "#
-# Catch-all evdev loader for udev-based systems
-# We don't simply match on any device since that also adds accelerometers
-# and other devices that we don't really want to use. The list below
-# matches everything but joysticks.
-
-Section \"InputClass\"
-        Identifier \"evdev pointer catchall\"
-        MatchIsPointer \"on\"
-        MatchDevicePath \"/dev/input/event*\"
-        Driver \"evdev\"
-EndSection
-
-Section \"InputClass\"
-        Identifier \"evdev keyboard catchall\"
-        MatchIsKeyboard \"on\"
-        MatchDevicePath \"/dev/input/event*\"
-        Driver \"evdev\"
-  Option \"XkbLayout\" \"en\"
-EndSection
-
-Section \"InputClass\"
-        Identifier \"evdev touchpad catchall\"
-        MatchIsTouchpad \"on\"
-        MatchDevicePath \"/dev/input/event*\"
-        Driver \"evdev\"
-EndSection
-
-Section \"InputClass\"
-        Identifier \"evdev tablet catchall\"
-        MatchIsTablet \"on\"
-        MatchDevicePath \"/dev/input/event*\"
-        Driver \"evdev\"
-EndSection
-
-Section \"InputClass\"
-        Identifier \"evdev touchscreen catchall\"
-        MatchIsTouchscreen \"on\"
-        MatchDevicePath \"/dev/input/event*\"
-        Driver \"evdev\"
-EndSection" | tee /etc/X11/xorg.conf.d/10-evdev.conf
-        echo ""
-    ;;
-
-    'j')
-        echo ""
-    ;;
-    *)
-        echo ""
-    ;;
-esac
-
-read -p "Tastiera configurata. Premere invio per continuare"
-clean
-
-##
-
-clear
-echo "Configurare orologio sistema--------2
-
-Che tipo di impostazione volete dare all'orologio dell'hardware?
-
- 1) UTC (raccomandato)
- 2) localtime (deprecato)
-
-Se non si usa Windows,scegliere UTC.Se si usa Windows,è caldamente consigliato usare comunque UTC, ma sarà necessario modificare una voce del registo di Windows.
-digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
-per saltare questo passaggio  "
-read scelta
-
-case $scelta in
-    '1')
-        hwclock --systohc --utc #Imposta utc come impostazione dell'orologio
-        echo ""
-    ;;
-    '2')
-	hwclock --systohc --localtime #Imposta localtime come impostazione dell'orologio
-        echo ""
-    ;;
-    'j')
-        echo ""
-    ;;
-    *)
-        echo ""
-    ;;
-esac
-read -p "Premere invio per continuare"
-
-
-##### 5 #######
-clear
-#AGGIORNAMENTO
-echo "ABILITARE I SERVER--------------3
-
-L'abilitazione dei server è necessaria per aggiornare le fonti software, non c'e alcun pericolo.
-Senza abilitare i server,sarete impossibilitati a installare e/o aggiornare software.
-
-Si aprirà l'editor nano; decommentare (togliendo il #) i repository di Italia, Francia e Germania, salvare con ctrl+o e uscire con ctrl+x.
-
-In alternativa è possibile far deccomentare automaticamente i tre mirror italiani più veloci.
-
-
-1)Deccomentare manualmente i mirror da usare [CONSIGLIATO]
-
-2)Far deccomentare automaticamente i 3 mirror italiani più veloci [sperimentale]
-
-INFORMAZIONI AVANZATE
-Per il punto 2,verrà usato 'reflector' e il comando 'reflector -l 3 -c Italy --save /etc/pacman.d/mirrorlist'
-
-Digitare il numero corrispondente all'alternativa scelta e Premere invio per eseguirla, oppure Premere \"j\" e \"invio\"
-per saltare questo passaggio  "
-
-read scelta
-
-case $scelta in
-    '1') nano /etc/pacman.d/mirrorlist
-
-        echo ""
-    ;;
-    '2') pacman -S reflector --needed #installazione di reflector
-
-         cp /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.backup #backup del file /etc/pacman.d/mirrorlist
-
-         reflector -l 3 -c Italy --save /etc/pacman.d/mirrorlist #esecuzione di reflector           nota:tutti i repo verranno aggiornati al punto 7
-
-        echo ""
-    ;;
-
-    'j')
-        echo ""
-    ;;
-    *)
-        echo ""
-    ;;
-
-
-esac
-
-read -p "Premere invio per continuare"
-
-##### 6 #######
-clear
-echo "ABILITAZIONE REPOSITORY 32 bit su Arch x86_64-------4
-
-Se si desidera eseguire applicazioni a 32 bit su Arch x86_64 (64 bit), attivare il repository [multilib].
-Senza di esso,non sarà possibile eseguire applicazioni a 32 bit su un sistema operativo a 64bit.
-Se si è installata la versione x86_64 di Arch (64bit), si consiglia di attivare il repository multilib.
-
-NON eseguire questo passaggio se si è già attivato il repository multilib durante l'installazione di Arch Linux
-
-Premere invio per continuare oppure \"j\" per saltare il passaggio."
-
-read -n1 a
-a=`echo $a | tr '[A-Z]' '[a-z]'`
-if [ "$a" != "j" ]; then
-echo "
-[multilib]
-Include = /etc/pacman.d/mirrorlist" >> /etc/pacman.conf #Aggiunta del repo multilib nel file /etc/pacman.conf
-
-read -p "repository multilib abilitato con successo. Premere invio per continuare"
-fi
-
-##### 7 #######
-clear
-echo "AGGIORNAMENTO REPOSITORY E INSTALLAZIONE AGGIORNAMENTI--------------5
-
-L'aggiornamento dei repository è necessario per continuare. non c'e alcun pericolo.
-L'installazione di eventuali aggiornamenti è FORTEMENTE consigliata.
-
-Cosa volete eseguire?
-
- 1) Aggiornamento repository
- 2) Aggiornamento repository E installazione aggiornamenti (CONSIGLIATO)
-
- INFORMAZIONI AVANZATE
- sarànno eseguiti i comandi
-
- 1)pacman -Syy
- 2)Pacman -Syyu
-
-Digitare il numero corrispondente all'alternativa scelta e Premere invio per eseguirla"
-
-read scelta
-
-case $scelta in
-    '1')
-        pacman -Syy #aggiornamento mirror
-        echo ""
-    ;;
-    '2') pacman -Syyu #aggiornamento mirror E installazione aggiornamenti
-        echo ""
-    ;;
-    'j')
-        echo ""
-    ;;
-    *)
-        echo ""
-    ;;
-esac
-
-read -p "Premere invio per continuare"
-
-##### 8 #######
-clear
-echo "INSERIRE UTENTE---------------6
-E' altamente consigliato creare un utente personalizzato. Premere invio per continuare, inserendo il nome utente
-e poi la password.
-nota:se non avete particolari esigenze,questo utente andrà benissimo.
-
-INFORMAZIONI AVANZATE:
-L'utente sarà inserito nei gruppi standart.Essi sono audio,lp,network,optical,storage,video,wheel,games,power,scanner,sys e disk mentre la shell sarà la bash
-
-
-Premere invio per continuare oppure \"j\" per saltare il passaggio."
-
-read -n1 a
-a=`echo $a | tr '[A-Z]' '[a-z]'`
-if [ "$a" != "j" ]; then
-
-echo -n "scrivi il tuo nome utente [invio]:"
-read nome_utente                             #viene "preso" il nome utente
-
-useradd -m -g users -G audio,lp,network,optical,storage,video,wheel,games,power,scanner,sys,disk -s /bin/bash ${nome_utente} #viene creato l'utente con il nome dato prima
-
-passwd ${nome_utente} #viene scelta la password per il nuovo utente
-
-read -p "Premere invio per continuare"
-
-fi
-
-##### 9 #######
-clear
-echo "INSTALLARE SUDO---------------7
-E' consigliata l'installazione di sudo. Una volta effettuata l'installazione, verrà aperto visudo.
-Decommentare la stringa \"%wheel ALL=(ALL) NOPASSWD: ALL\".
-Poi salvare e chiudere con ctrl+o e ctrl+x
-
-Sudo (Super User DO) permette di effetuare da utente normale,per un breve periodo di tempo,comandi che altrimenti potrebbe eseguire solo l'utente root.
-Usare sudo invece di diventare root porta a una maggiore sicurezza,per questo l'installazione di sudo è consigliata.
-
-INFORMAZIONI AVANZATE
-Verrà usato l'editor 'nano' durante l'esecuzione di visudo.
-
-Premere invio per continuare oppure \"j\" per saltare il passaggio."
-
-read -n1 a
-a=`echo $a | tr '[A-Z]' '[a-z]'`
-if [ "$a" != "j" ]; then
-
-pacman -S sudo --needed #installazione di sudo
-
-EDITOR=nano visudo #avvio di visudo con l'editor nano
-
-read -p "Premere invio per continuare"
-fi
-
-##### 10 #######
-clear
-echo "INSTALLARE XORG---------------8
-Vuoi installare l'interfaccia grafica di base(xorg)?Senza installare xorg non potrai installare nessun DE.
-Xorg è quindi,almeno per il momento, fondamentale in un installazione dotata di interfaccia grafica.
-
-INFORMAZIONI AVANZATE
-Verranno installati i pacchetti 'xorg-server xorg-xinit xorg-server-utils'
-
-Premere invio per continuare oppure \"j\" per saltare il passaggio."
-
-read -n1 a
-a=`echo $a | tr '[A-Z]' '[a-z]'`
-if [ "$a" != "j" ]; then
-
-pacman -S xorg-server xorg-xinit xorg-server-utils --needed #Installazione di Xorg e dipendenze varie.
-
-read -p "Premere invio per continuare"
-fi
-
-######### 11 ########
-clear
-echo "INSTALLARE DBUS---------------9
-Installare dbus? Esso è richiesto per il DE grafico.
-
-INFORMAZIONI AVANZATE
-Sarà installato il pacchetto 'dbus'
-
-Premere invio per continuare oppure \"j\" per saltare il passaggio."
-
-read -n1 a
-a=`echo $a | tr '[A-Z]' '[a-z]'`
-if [ "$a" != "j" ]; then
-
-pacman -S dbus --needed #installazione di dbus
-
-read -p "Premere invio per continuare"
-fi
-
-##### 12 #######
-clear
-echo "INSTALLARE MESA---------------10
-Vuoi installare il supporto 3D (mesa)?
-Il 3D è inteso come accelerazione grafica,NON come 3D degli schermi 3D (con gli occhialini)
-è FORTEMENTE consigliato installare questo pacchetto.
-
-INFORMAZIONI AVANZATE
-Verranno installati i pacchetti 'mesa mesa-demos'
-
-Premere invio per continuare oppure \"j\" per saltare il passaggio."
-
-read -n1 a
-a=`echo $a | tr '[A-Z]' '[a-z]'`
-if [ "$a" != "j" ]; then
-
-pacman -S mesa mesa-demos --needed #installazione di mesa e dipendenza
-
-read -p "Premere un tasto per continuare"
-fi
-
-
-##### 13 #######
+##### 11 #######
 clear
 echo "INSTALLARE DRIVER SCHEDA VIDEO---------------11
 
@@ -468,32 +796,25 @@ read scelta
 
 case $scelta in
 #installazione dei vari driver
-
     '1')
         pacman -S xf86-video-intel --needed
-
         pacman -S lib32-intel-dri  --needed
         echo ""
     ;;
     '2')
         pacman -S xf86-video-ati  --needed
-
         pacman -S lib32-ati-dri   --needed
         echo ""
     ;;
     '3')
         pacman -S xf86-video-nouveau --needed
-
         pacman -S lib32-nouveau-dri  --needed
         echo ""
-
     ;;
     '4')
         pacman -S nvidia    --needed
-
         pacman -S lib32-nvidia-utils --needed
         echo ""
-
     ;;
     '5')
         pacman -S xf86-video-sis --needed
@@ -514,7 +835,7 @@ esac
 
 read -p "Premere invio per continuare"
 
-##### 14 #######
+##### 12 #######
 clear
 echo "INSTALLARE DRIVER TOUCHPAD E CONFIGURARE TOUCHPAD---------------12
 Il computer è dotato di touchpad? Occorre installare synaptics.
@@ -560,7 +881,7 @@ EndSection" | tee /etc/X11/xorg.conf.d/10-synaptics.conf #abilitazone dello scro
 esac
 read -p "Premere invio per continuare"
 
-######### 15 ########
+######### 13 ########
 clear
 echo "INSTALLARE YAOURT---------13
 Vuoi installare Yaourt per la gestione dei pacchetti presenti in AUR?
@@ -609,8 +930,8 @@ echo "
 read -p "Premere un tasto per continuare"
 fi
 
-####Scelta Desktop
-clear 
+####14 Scelta Desktop
+clear
 echo " Scegliere Ambiente Desktop
 
      1.Xfce
@@ -618,9 +939,8 @@ echo " Scegliere Ambiente Desktop
      3.Gnome
 
 Digita scelta e premere invio."
-clear
 read desktop
-if [ $desktop = '1'];
+if [ $desktop = 1 ];
   then
   echo "Xfce è disponibile:
 
@@ -637,7 +957,7 @@ INFORMAZIONI AGGIUNTIVE (pacchetti installati)
 4.xfce-core: xfwm4 xfce4-panel xfdesktop thunar xfce4-session xfce4-settings xfce4-appfinder xfce-utils xfconf
 I pacchetti 'gvfs gvfs-afc thunar-volman' provengono da AUR
 Digitare un opzione e premere invio ....."
-read $subdesktop
+read subdesktop
 case $subdesktop in
     '1') pacman -S xfce4 gnome-icon-theme fortune-mod dbus gamin xfce4-goodies --needed
        yaourt -S gvfs gvfs-afc thunar-volman --needed
@@ -645,7 +965,6 @@ case $subdesktop in
        pacman -S slim archlinux-themes-slim --needed
        systemctl enable slim.service  #con "enable", i login manager vengono lanciati all'avvio del sistema in automatico.
        echo ""
-
   ;;
     '2') pacman -S xfce4 gnome-icon-theme fortune-mod dbus gamin --needed
         yaourt -S gvfs gvfs-afc thunar-volman --needed
@@ -654,7 +973,6 @@ case $subdesktop in
         pacman -S slim archlinux-themes-slim --needed
         systemctl enable slim.service  #con "enable", i login manager vengono lanciati all'avvio del sistema in automatico.
         echo ""
-
    ;;
     '3') pacman -S xfce4 --needed
          echo "exec dbus-launch --exit-with-session startxfce4" | tee /home/${nome_utente}/.xinitrc
@@ -662,14 +980,12 @@ case $subdesktop in
          pacman -S slim archlinux-themes-slim --needed
          systemctl enable slim.service  #con "enable", i login manager vengono lanciati all'avvio del sistema in automatico.
          echo ""
-
    ;;
     '4') Pacman -S xfwm4 xfce4-panel xfdesktop thunar xfce4-session xfce4-settings xfce4-appfinder xfce-utils xfconf #i "core packages" di xfce
          echo "exec dbus-launch --exit-with-session startxfce4" | tee /home/${nome_utente}/.xinitrc
          pacman -S slim archlinux-themes-slim --needed
          systemctl enable slim.service  #con "enable", i login manager vengono lanciati all'avvio del sistema in automatico.
          echo ""
-
          ;;
          'j')
              echo ""
@@ -719,7 +1035,7 @@ case $subdesktop in
 esac
 read -p "Premere invio per continuare"
 
-elif [ $desktop = '3' ]; then
+elif [ $desktop = 3 ]; then
     echo"Gnome è disponibile:
 
         1. completa
@@ -753,7 +1069,8 @@ esac
 fi
 #########XX########
 clear
-echo "INSTALLARE GKSU---------------25
+#####15
+echo "INSTALLARE GKSU---------------15
 E' consigliata l'installazione di gksu se si avrà intenzione di usare programmi di GNOME (gtk)
 
 Gksu è un interfaccia grafica a sudo per i programmi GTK,ed è sempre consigliato lanciare programmi gtk con gksu invece che con il normale sudo.
@@ -772,9 +1089,9 @@ pacman -S gksu --needed
 read -p "Premere un tasto per continuare"
 fi
 
-######### 26 ########
+#########16########
 clear
-echo "INSTALLARE CONTROLLO DISPOSITIVI RIMOVIBILI E DEVICE---------26
+echo "INSTALLARE CONTROLLO DISPOSITIVI RIMOVIBILI E DEVICE---------16
 Vuoi installare gli strumenti per la gestione dei dispositivi rimovibili e dei devices interni?
 
 INFORMAZIONI AVANZATE
@@ -791,10 +1108,9 @@ yaourt -S  polkit-use-wheel-group polkit desktop-privileges polkit-kde --needed
 read -p "Premere un tasto per continuare"
 fi
 
-
-######### 27 ########
+#########17########
 clear
-echo "INSTALLARE FONTS TTF-DEJAVU---------27
+echo "INSTALLARE FONTS TTF-DEJAVU---------17
 Vuoi installare i fonts ttf-dejavu?
 I font dejavu sono un insieme di font di alta qualità
 
@@ -810,21 +1126,17 @@ yaourt -S ttf-dejavu --needed
 read -p "Premere un tasto per continuare"
 fi
 
-
-######### 28 ########
+######### 18 ########
 #INSTALLARE PACCHETTI PER APPLICAZIONE DI STAMPA
 clear
-echo "INSTALLAZIONE PROGRAMMI PER LA STAMPA----------------28
+echo "INSTALLAZIONE PROGRAMMI PER LA STAMPA----------------18
 
 Verranno ora installati i pacchetti essenziali per la stampa e per la stampa su file pdf.
 Successivamente sarà necessario configurare cups e cups-pdf secondo la guida del wiki di Arch
 
 1)Si usa gnome,xfce e si vuole far avviare cups a ogni avvio del sistema
-
 2)Si usa KDE e si vuole far avviare cups a ogni avvio del sistema
-
 3)Si usa gnome,xfce, e NON si vuole far avviare cups a ogni avvio del sistema
-
 4)Si usa KDE e  NON si vuole far avviare cups a ogni avvio del sistema
 
 INFORMAZIONI AVANZATE
@@ -842,18 +1154,15 @@ Digitare il numero corrispondente all'alternativa scelta e Premere invio per ins
 per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt,aggiungere 'a' alla scelta (es. '1a')"
 
 read scelta
-
 case $scelta in
     '1')
         yaourt -S cups gutenprint cups-pdf system-config-printer-common system-config-printer-gnome foomatic-{db,db-engine} a2ps ghostscript gsfonts cups-usblp --needed
-
         systemctl enable cups.service
         echo ""
     ;;
     '2')
         yaourt -S kdeadmin-kuser cups gutenprint system-config-printer cups-pdf kdeutils-printer-applet kdeadmin-system-config-printer-kde --needed
         systemctl enable cups.service
-
         echo ""
    ;;
    '3')
@@ -888,16 +1197,12 @@ case $scelta in
     ;;
 esac
 read -p "Premere un tasto per continuare"
-
-########## 29 ###########
+##########19 ###########
 
 clear
-echo "INSTALLAZIONE SOFTWARE PER LO SCANNER-------------29
-
+echo "INSTALLAZIONE SOFTWARE PER LO SCANNER-------------19
 Verranno installati i pacchetti essenziali per il funzionamento degli scanner.
-
 Se non possiede uno scanner,  può saltare questo passaggio.
-
 Verranno installati i seguenti pacchetti: sane e simple-scan oppure scan e skanlite (per KDE)
 
 1)Si vogliono i pacchetti dello scanner per XFCE,GNOME.
@@ -917,7 +1222,6 @@ read scelta
 case $scelta in
     '1')
         pacman -S sane simple-scan  --needed
-
         echo ""
     ;;
     '2')
@@ -937,13 +1241,12 @@ case $scelta in
         echo ""
     ;;
 esac
-
 read -p "Premere un tasto per continuare"
 
-########## 30 ###############
+########## 20 ###############
 # INSTALLARE DRIVER DELLE STAMPANTI PIÙ COMUNI
 clear
-echo "INSTALLAZIONE DRIVER STAMPANTI--------------30
+echo "INSTALLAZIONE DRIVER STAMPANTI--------------20
 
 Potete scegliere di installare i driver della stampante che possedete. Per le Brother è possibile che il driver installato non sia quello corretto.
 La miglior soluzione è una ricerca su arch wiki.I seguenti driver non valgono per le stampanti di rete.
@@ -999,64 +1302,15 @@ case $scelta in
     ;;
 esac
 read -p "Premere un tasto per continuare"
-echo "INSTALLAZIONE SOFTWARE----------------31
-
-Desideri installare i programmi solitamente compresi nel menu \"Accessori\", quali editor di testo, calcolatrice, ricerca file, gestore archivi,
-gestione password, masterizzazione?
-
-1)Voglio installare pacchetti per Xfce
-2)Voglio installare pacchetti per KDE
-3)Voglio installare pacchetti per GNOME o cinnamon
-
-INFORMAZIONI AVANZATE
-
-Verranno installati i seguenti pacchetti: leafpad catfish thunar galculator recoll file-roller xfburn keepassx p7zip, rar, unrar,
-unzip per  XFCE
-
-Verranno installati i seguenti pacchetti: gedit  nautilus gcalctool file-roller gnome-search-tool gnome-screenshot keepassx brasero rar unrar
-unzip p7zip  per  GNOME
-
-Verranno installati i seguenti pacchetti: konsole kate dolphin k3b kcalc  keepassx kdeutils-ark p7zip rar unrar
-unzip per  KDE
-Diversi pacchetti provengono da AUR
-
-Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
-per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt, aggiungere 'a' alla scelta (es. '1a')"
-
-  read scelta
-
-case $scelta in
-    '1')
-        yaourt -S leafpad catfish findutils mlocate galculator recoll keepassx file-roller p7zip rar unrar unzip  --needed
-        echo ""
-    ;;
-    '2')
-        yaourt -S kdebase-konsole kdesdk-kate kdebase-katepart kdebase-dolphin kdesdk-dolphin-plugins k3b kdeutils-kcalc kdeutils-ark keepassx p7zip rar unrar unzip --needed
-        echo ""
-    ;;
-    '3')
-        yaourt -S gedit  nautilus gcalctool file-roller gnome-search-tool gnome-screenshot keepassx brasero rar unrar unzip p7zip --needed
-        echo ""
-    ;;
-    'j')
-        echo ""
-
-    ;;
-    *)
-        echo ""
-    ;;
-esac
-read -p "Premere un tasto per continuare"
-
-########## 32 ###############
+########## 21 ###############
 # INSTALLARE PACCHETTI DI GRAFICA
 clear
-echo "INSTALLAZIONE SOFTWARE---------------32
+echo "INSTALLAZIONE SOFTWARE---------------21
 
 Desideri installare i programmi solitamente presenti nella sezione \"grafica\", quali gestore immagini, visualizzatore immagini, visualizzatore pdf etc...?
 
 1)Installare pacchetti per XFCE
-2)Installare pacchetti per GNOME e/o cinnamon
+2)Installare pacchetti per GNOME
 3)Installare pacchetti per KDE
 
 INFORMAZIONI AVANZATE
@@ -1070,7 +1324,6 @@ Digitare il numero corrispondente all'alternativa scelta e Premere invio per ins
 per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt, aggiungere 'a' alla scelta (es. '1a')"
 
 read scelta
-
 case $scelta in
     '1')
         yaourt -S shotwell evince ristretto  --needed
@@ -1112,52 +1365,9 @@ case $scelta in
 esac
 
 read -p "Premere un tasto per continuare"
-
-########## 33 ###############
+########## 23 ###############
 clear
-echo "INSTALLAZIONE SOFTWARE--------------
-
-Gimp è un programma di fotoritocco avanzato comparabile con photoshop.
-
-1)Gimp
-2)Gimp inclusi molti plugin per gimp (consigliato)
-
-INFORMAZIONI AVANZATE
-Verrano installati i pacchetti
-
-1) gimp gimp-help-it
-2)gimp  gimp-gap gimp-help-it gimp-ufraw xsane-gimp  gimp-plugin-fblur gimp-plugin-gmic gimp-plugin-lqr gimp-plugin-mathmap gimp-plugin-wavelet-decompose gimp-plugin-wavelet-denoise gimp-refocus
-
-Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
-per saltare questo passaggio"
-
-read scelta
-
-case $scelta in
-    '1')
-        pacman -S gimp gimp-help-it  --needed
-        echo ""
-    ;;
-    '2')
-        pacman -S gimp  gimp-gap gimp-help-it gimp-ufraw xsane-gimp  gimp-plugin-fblur gimp-plugin-gmic gimp-plugin-lqr gimp-plugin-mathmap gimp-plugin-wavelet-decompose gimp-plugin-wavelet-denoise gimp-refocus --needed
-        echo ""
-    ;;
-
- 'j')
-        echo ""
-
-    ;;
-    *)
-        echo ""
-    ;;
-esac
-
-read -p "Premere un tasto per continuare"
-
-########## 34 ###############
-# INSTALLARE CLIENT DI POSTA ED ALTRI SERVIZI INTERNET
-clear
-echo "INSTALLAZIONE SOFTWARE------------34
+echo "INSTALLAZIONE SOFTWARE------------23
 
 Thunderbird,evolution e kmail sono delle applicazioni per la gestione della posta elettronica.
 Potete scegliere tra:
@@ -1212,9 +1422,9 @@ esac
 read -p "Premere un tasto per continuare"
 
 
-########## 35 ###############
+########## 26 ###############
 clear
-echo "INSTALLAZIONE SOFTWARE-------------35
+echo "INSTALLAZIONE SOFTWARE-------------26
 
 Pidgin e xchat sono due programmi utili per la messaggistica e la chat IRC.
 
@@ -1254,9 +1464,9 @@ read -p "Premere un tasto per continuare"
 
 
 
-########## 36 ###############
+########## 27 ###############
 clear
-echo "INSTALLAZIONE SOFTWARE-------------36
+echo "INSTALLAZIONE SOFTWARE-------------27
 
 Transmission è uno dei piu semplici e popolari client torrent disponibili per GNU/Linux.È disponbile sia per KDE che per GNOME, cinnamon, openbox, XFCE ed e17
 Ktorrent è un client torrent per KDE presente di default in molte distribuzioni con KDE.
@@ -1317,12 +1527,12 @@ read -p "Premere un tasto per continuare"
 
 
 
-########## 37 ###############
+########## 28 ###############
 clear
-echo "INSTALLAZIONE SOFTWARE-------------37
+echo "INSTALLAZIONE SOFTWARE-------------28
 
 Un player multimediale è un programma che consente di visualizzare tutti i tipi di file audio e video.
- 1)Parole è il lettore multimediale leggero e semplice sviluppato per l'ambiente grafico xfce (SCELTA CONSIGLIATA PER XFCE)
+ 1)Parole è il lettore multimediale leggero e semplice sviluppato per l'ambiente grafico xfce
  2)Vlc è il lettore multimediale piu usato al mondo. Ottimo su qualsiasi DE
  3)Totem è il lettore multimediale dell'ambiente grafico gnome.
  4)Bangarang è un player multimediale per KDE.(solo AUR)
@@ -1383,9 +1593,9 @@ esac
 
 read -p "Premere un tasto per continuare"
 
-########## 38 ###############
+########## 29 ###############
 clear
-echo "INSTALLAZIONE SOFTWARE-------------38
+echo "INSTALLAZIONE SOFTWARE-------------29
 
 Vuoi installare un gestore di musica?
 
@@ -1447,34 +1657,20 @@ case $scelta in
 esac
 read -p "Premere un tasto per continuare"
 
-########## 39 ###############
+########## 30 ###############
 clear
-echo "INSTALLAZIONE SOFTWARE-------------39
+echo "INSTALLAZIONE SOFTWARE-------------30
 
 
-Desideri installare i programmi di sistema utili in alcuni casi?
+IBus (Intelligent Input Bus) is an input method framework, a system for entering foreign characters.
 
-
-INFORMAZIONI AVANZATE
-Verranno installati i seguenti pacchetti:'ibus, unetbootin, imagewriter'
-
-Unetbootin e Imagewriter permettono di scrivere delle immagini ISO su supporti USB.
-Ibus 'Intelligent input bus' è un tool più complesso e particolare,si consiglia di visitare la wiki di Arch per ulteriori informazioni.
-
-
-Dare '1' e invio per installarli oppure Premere \"j\" per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt, dare '1a' e invio"
-read scelta
+Dare 'y' e invio per installarli oppure Premere \"j\" per saltare questo passaggio."
 
 case $scelta in
-    '1')
-        yaourt -S ibus unetbootin imagewriter --needed
+    'y')
+        yaourt -S ibus --needed
         echo ""
     ;;
-    '1a')
-       yaourt -S  ibus unetbootin imagewriter --needed
-        echo ""
-    ;;
-
     'j')
         echo ""
     ;;
@@ -1484,9 +1680,9 @@ case $scelta in
 esac
 read -p "Premere un tasto per continuare"
 
-########## 40 ###############
+########## 31 ###############
 clear
-echo "INSTALLAZIONE SOFTWARE-------------40
+echo "INSTALLAZIONE SOFTWARE-------------31
 
 E'possibile installare una suite di ufficio tre due alternative:
  1)LibreOffice è una suite che offre sei applicazioni ricche di funzionalità per tutte le necessità di produzione di documenti e elaborazione dati: Writer, Calc, Impress,
@@ -1532,9 +1728,9 @@ case $scelta in
 esac
 read -p "Premere un tasto per continuare"
 
-########## 41 ###############
+########## 32 ###############
 clear
-echo "INSTALLAZIONE SOFTWARE-------------41
+echo "INSTALLAZIONE SOFTWARE-------------32
 
 Desideri installare codecs, fonts di parti terze proprietarie, pacchetti opensource sostitutivi di java?
 è consigliato installare i seguenti pacchetti per consentire la corretta visualizzazione di video, canzoni ecc...
@@ -1568,13 +1764,13 @@ esac
 read -p "Premere un tasto per continuare"
 
 
-########## 42 ###############
+#########################
 clear
-echo "INSTALLAZIONE SOFTWARE-------------42
+echo "INSTALLAZIONE SOFTWARE-------------
 
 Vuoi installare anche programmi per la sicurezza, per la pulizia sicura delle tracce?
 
-Verranno installati i seguenti pacchetti:bleachbit, wipe e wipetrash per XFCE,GNOME,cinnamon,openbox ed E17
+Verranno installati i seguenti pacchetti:bleachbit, wipe e wipetrash per XFCE,GNOME.
 Verranno installati i seguenti pacchetti:sweeper e wipe  per KDE
 
 1)Vorrei bleachbit, wipe e wipetrash
@@ -1617,9 +1813,9 @@ esac
 read -p "Premere un tasto per continuare"
 
 
-########## 43 ###############
+########## 34 ###############
 clear
-echo "INSTALLAZIONE SOFTWARE-------------43
+echo "INSTALLAZIONE SOFTWARE-------------34
 
 L'installazione di una antivirus (così come di un firewall) su linux è ritenuta superflua. Tuttavia, è buona regola installare un antivirus per evitare di essere portatori sani di virus che possono passare attraverso i nostri computer.
 La presenza di un antivirus e di un firewall è obbligatoria per legge per determinate professioni ed imprese.
@@ -1651,184 +1847,10 @@ case $scelta in
 
 esac
 read -p "Premere un tasto per continuare"
-########## 44 ###############
+########## 35 ###############
+
 clear
-echo "INSTALLAZIONE SOFTWARE-------------44
-
-Vuoi installare il tema greybird per xfce?
-Installare solo se si è scelto di installare xfce
-
-INFORMAZIONI AVANZATE
-Verrà installato il pacchetto 'xfce-theme-greybird' da AUR
-
-Premere '1' e invio  per installarlo oppure Premere \"j\" per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt, dare '1a' e invio"
-
-read scelta
-
-case $scelta in
-    '1')
-        yaourt -S xfce-theme-greybird --needed
-        echo ""
-    ;;
-    '1a')
-        yaourt -S  xfce-theme-greybird--needed --noconfirm
-        echo ""
-    ;;
-
-    'j')
-        echo ""
-    ;;
-
-    *)
-        echo ""
-    ;;
-
-esac
-read -p "Premere un tasto per continuare"
-
-
-
-########## 45 ###############
-clear
-echo "INSTALLAZIONE SOFTWARE-------------45
-
-Vuoi installare i puntatori per il mouse dmz-vanilla per xfce?
-Installare solo se si è scelto di installare xfce
-
-INFORMAZIONI AVANZATE
-sarànno installati i pacchetti: 'xcursor-vanilla-dmz-aa xcursor-vanilla-dmz' da AUR
-
-Premere '1' e invio  per installarli oppure Premere \"j\" per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt, dare '1a' e invio"
-
-read scelta
-
-case $scelta in
-    '1')
-        yaourt -S xcursor-vanilla-dmz-aa xcursor-vanilla-dmz --needed
-        echo ""
-    ;;
-    '1a')
-        yaourt -S xcursor-vanilla-dmz-aa xcursor-vanilla-dmz  --noconfirm --needed
-        echo ""
-    ;;
-
-    'j')
-        echo ""
-    ;;
-
-    *)
-        echo ""
-    ;;
-
-esac
-read -p "Premere un tasto per continuare"
-
-
-
-########## 46 ###############
-clear
-echo "INSTALLAZIONE SOFTWARE-------------46
-
-Vuoi installare le icone faenza cupertino per XFCE o KDE?
-Per gli altri DE,potrai installare le icone 'faenza' una volta uscito da questo script.
-
-1)Installare icone faenza per XFCE
-
-2)Installare icone faenza per KDE
-
-Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
-per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt, aggiungere 'a' alla scelta (es. '1a')  "
-read scelta
-
-case $scelta in
-    '1')
-        yaourt -S faenza-icon-theme faenza-xfce-addon --needed
-        echo ""
-    ;;
-    '2')
-        yaourt -S kfaenza-icon-theme --needed
-        echo ""
-    ;;
-    '1a')
-        yaourt -S faenza-icon-theme faenza-xfce-addon --needed--noconfirm
-        echo ""
-    ;;
-    '2a')
-        yaourt -S kfaenza-icon-theme --needed --noconfirm
-        echo ""
-    ;;
-    'j')
-        echo ""
-    ;;
-    *)
-        echo ""
-    ;;
-esac
-read -p "Premere un tasto per continuare"
-
-########## 47 ###############
-clear
-echo "INSTALLAZIONE SOFTWARE-------------47
-
-Vuoi installare il plugin \"qtcurve\" per KDE?
-Questo plugin permette una personalizzazione ancora più completa di KDE.
-Installare solo se si è scelto di installare KDE
-
-INFORMAZIONI AVANZATE
-Verrà installato il pacchetto 'qtcurve-kde4'
-
-Premere un tasto per installarlo oppure Premere \"j\" per saltare questo passaggio."
-
-read -n1 a
-a=`echo $a | tr '[A-Z]' '[a-z]'`
-if [ "$a" != "j" ]; then
-    echo ""
-    pacman -S qtcurve-kde4  --needed
-
-read -p "Premere un tasto per continuare"
-fi
-
-########## 48 ##############
-clear
-echo "INSTALLAZIONE SOFTWARE-------------48
-
-Vuoi installare il plugin \"kde-panels-collection\" per KDE?
-Questo plugin permette di creare su KDE dei pannelli molto simili a quelli di altri DE come gnome 2 o unity.
-Installare solo se si è scelto di installare KDE
-
-INFORMAZIONI AVANZATE
-Verà installato il pacchetto 'kdeplasma-themes-panels-collection' da AUR
-
-Premere '1' e invio  per installarli oppure Premere \"j\" per saltare questo passaggio.Per usare l'opzione 'noconfirm' di yaourt, dare '1a' e invio"
-
-read scelta
-
-case $scelta in
-    '1')
-        yaourt -S kdeplasma-themes-panels-collection  --needed
-        echo ""
-    ;;
-    '1a')
-        yaourt -S kdeplasma-themes-panels-collection   --noconfirm --needed
-        echo ""
-    ;;
-
-    'j')
-        echo ""
-    ;;
-
-    *)
-        echo ""
-    ;;
-
-esac
-read -p "Premere un tasto per continuare"
-
-
-
-########## 49 ###############
-clear
-echo "INSTALLAZIONE WEB BROWSER-------------49
+echo "INSTALLAZIONE WEB BROWSER-------------40
 
 Un web browser consente la navigazione nel web.
 
@@ -1900,9 +1922,9 @@ case $scelta in
     ;;
 esac
 read -p "Premere un tasto per continuare"
-########## 49 ###############
+#########################
 clear
-echo "INSTALLAZIONE TOR WEB BROWSER-------------49.1
+echo "INSTALLAZIONE TOR WEB BROWSER-------------
 
 Tor-Browser, un browser “all-in-one” che ci permette di navigare in modo sicuro e anonimo su internet.
 Questo Browser non è altro che una versione modificata di Firefox che però potremo utilizzare solamente
@@ -1937,11 +1959,9 @@ case $scelta in
     ;;
 esac
 read -p "Premere un tasto per continuare"
-
-
-########## 50 ##############
+########################
 clear
-echo "INSTALLAZIONE SOFTWARE-------------50
+echo "INSTALLAZIONE SOFTWARE------------
 
 Vuoi installare il gestore dell'ora ntp?
 
@@ -1964,9 +1984,9 @@ systemctl enable ntpd.service
 
 read -p "Premere un tasto per continuare"
 fi
-########## 51 ##############
+########################
 clear
-echo "INSTALLAZIONE SOFTWARE-------------51
+echo "INSTALLAZIONE SOFTWARE-------------
 
 Occorre avviare automaticamente alcuni demoni
 come syslog-ng e cronie (vecchio crond)
@@ -1988,12 +2008,11 @@ if [ "$a" != "j" ]; then
     systemctl enable syslog-ng.service
 
 read -p "Premere un tasto per continuare"
-
 fi
 
-################### 52 ################
+###################################
 clear
-echo "INSTALLAZIONE SOFTWARE ---------------52
+echo "INSTALLAZIONE SOFTWARE -------------
 Vuoi installare networkmanager? è un tool che permette di collegarsi a internet.
 Verrà installato anche un tool per permetterti di usare network manager in via grafica.
 
@@ -2058,9 +2077,9 @@ case $scelta in
     ;;
 esac
 read -p "Premere un tasto per continuare"
-######## 53 ########################
+######## 44 ########################
 clear
-echo "INSTALLAZIONE SOFTWARE-----------------53
+echo "INSTALLAZIONE SOFTWARE-----------------44
 
 Vuoi installare wine?Si tratta di un tool che permette di eseguire diverse applicazioni per Microsoft Windows su GNU/Linux.
 Puoi scegliere tra:
@@ -2072,7 +2091,6 @@ Puoi scegliere tra:
 3)Installazione completa di wine per KDE (wine wine_gecko  winetricks playonlinux q4wine).Comprende l'utilissimo tool in qt \"q4wine\"
 
 Potrebbe essere necessario configurare succesivamente wine.
-
 Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
 per saltare questo passaggio  "
 
@@ -2100,18 +2118,16 @@ case $scelta in
 esac
 read -p "Premere un tasto per continuare"
 
-######## 55 ########################
+######## 45 ########################
 clear
-echo "INSTALLAZIONE SOFTWARE-----------------54
+echo "INSTALLAZIONE SOFTWARE-----------------45
 
 Vuoi installare Skype? Si tratta di un tool proprietario che permette di effettuare chiamate e videochiamate gratuite verso altri pc con skype e chiamate a pagamento verso cellulari.
 Skype-call-recorder è un tool che permette di registrare le conversazioni effettuate con Skype.È in qt,quindi consigliato per KDE.
 Puoi scegliere tra:
 
 1)Installazione di Skype                          (skype)
-
 2)Installazione di Skype e Skype-call-recorder    (skype skype-call-recorder)
-
 
 Digitare il numero corrispondente all'alternativa scelta e Premere invio per installarla oppure Premere \"j\" e \"invio\"
 per saltare questo passaggio  "
@@ -2136,9 +2152,9 @@ case $scelta in
 esac
 read -p "Premere un tasto per continuare"
 
-######## 56 ########################
+######## 46 ########################
 clear
-echo "INSTALLAZIONE SOFTWARE-----------------55
+echo "INSTALLAZIONE SOFTWARE-----------------46
 
 Vuoi installare alsa-utils? Si tratta di un pacchetto aggiuntivo per alsa che permette di regolare il volume.Contiene il noto tool 'alsamixer'.
 Questo passaggio è consigliato.
@@ -2156,9 +2172,9 @@ pacman -S alsa-utils --needed
 read -p "Premere invio per continuare"
 fi
 
-######## 57 ########################
+######## 47 ########################
 clear
-echo " INSTALLAZIONE SOFTWARE-----------------57
+echo " INSTALLAZIONE SOFTWARE-----------------47
 
 Vuoi installare \"downgrade\"? Si tratta di un pacchetto che permette di effettuare il downgrade di un pacchetto nel caso in cui la nuova versione non funzionasse.
 Può effettura il downgrade sia nella cache che su ARM, una sorta di cache online che permette di installare i pacchetti che aveva Arch in una data scelta.
@@ -2187,9 +2203,41 @@ case $scelta in
 esac
 read -p "Premere un tasto per continuare"
 
-########END########################
 clear
-read -p "[*] Per terminare l'installazione è necessario riavviare.
-special thanks: www.xfce-italia.it e alexiobash.
-Premere un tasto per uscire"
-exit
+read -p "[*] Premere un tasto per continuare"
+###############################################################################
+###############################################################################
+# install additional packages
+if [[ "$install_packages" = 'yes' ]]; then
+	message 'Installing additional packages..'
+	pacman_install ${packages[@]} || :
+fi
+
+# configure system
+configure_system
+
+# install bootloader
+install_bootloader
+
+# unmount filesystems
+if [[ "$unmount" = 'yes' ]]; then
+	message 'Unmounting filesystems..'
+	umount -R /mnt
+	## close encrypted volume
+	[[ "$manual_part" = 'no' && "$home" = 'yes' && "$encrypt_home" = 'yes' ]] &&
+	 cryptsetup close home
+else
+	message 'Please unmount the targeted filesystems before rebooting.'
+fi
+
+# finish
+printf "$RED"
+cat << EOF
+---------------------------------------
+        Installation completed!
+     Reboot the computer: # reboot
+---------------------------------------
+EOF
+printf "$ALL_OFF"
+
+exit 0
